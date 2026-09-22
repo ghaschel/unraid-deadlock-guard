@@ -1,0 +1,21 @@
+name: Validate beta
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: ./scripts/test.sh
+      - run: npm install --no-save --package-lock=false playwright@1.55.0
+      - run: npx playwright install --with-deps chromium
+      - run: mkdir -p dist && node tests/js/browser.cjs
+      - run: python3 scripts/build.py --update-manifest && git diff --exit-code -- deadlock-guard.plg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deadlock-guard-beta
+          path: dist/

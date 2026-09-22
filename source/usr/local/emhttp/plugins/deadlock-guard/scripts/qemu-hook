@@ -1,0 +1,4 @@
+#!/bin/bash
+# Owned by Deadlock Guard. Independent libvirt qemu.d hook; do not call libvirt here.
+[ -f /boot/config/plugins/deadlock-guard/installed.json ] || exit 0
+exec /usr/bin/php -d auto_prepend_file= /usr/local/emhttp/plugins/deadlock-guard/scripts/hook.php "$@"

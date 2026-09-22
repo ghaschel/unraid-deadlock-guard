@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PLUGIN name="deadlock-guard" author="Guilherme Haschel" version="2026.09.22" launch="DeadlockGuard" pluginURL="https://raw.githubusercontent.com/ghaschel/unraid-deadlock-manager/main/deadlock-guard.plg" support="https://github.com/ghaschel/unraid-deadlock-manager/issues" icon="fa-shield" min="7.3.0" max="7.3.999">
+  <CHANGES>### 2026.09.22 — initial beta
+Native exclusive-group handoffs, VM safety gate, conservative recovery and Settings UI. Host validation required.</CHANGES>
+  <FILE Run="/bin/bash">
+    <INLINE>
+set -euo pipefail
+version=$(sed -n 's/^version="\(.*\)"/\1/p' /etc/unraid-version)
+case "$version" in 7.3.[0-9]*) ;; *) echo "Deadlock Guard requires Unraid 7.3.x" &gt;&amp;2; exit 1;; esac
+if [ -x /usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle ]; then
+  /usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle upgrade
+fi
+mkdir -p /boot/config/plugins/deadlock-guard/packages
+</INLINE>
+  </FILE>
+  <FILE Name="/boot/config/plugins/deadlock-guard/packages/deadlock-guard-2026.09.22-noarch-1.txz">
+    <URL>https://github.com/ghaschel/unraid-deadlock-manager/releases/download/2026.09.22/deadlock-guard-2026.09.22-noarch-1.txz</URL>
+    <SHA256>0ce661cb24a6ec226e065c441a80b3d0786cf11345d4ecd6a9bebf518cae278a</SHA256>
+    <MD5>7cb4cb8f91070fe36d3efd966372df7f</MD5>
+  </FILE>
+  <FILE Run="/bin/bash">
+    <INLINE>
+set -euo pipefail
+printf '%s  %s\n' '0ce661cb24a6ec226e065c441a80b3d0786cf11345d4ecd6a9bebf518cae278a' '/boot/config/plugins/deadlock-guard/packages/deadlock-guard-2026.09.22-noarch-1.txz' | sha256sum -c -
+upgradepkg --install-new '/boot/config/plugins/deadlock-guard/packages/deadlock-guard-2026.09.22-noarch-1.txz'
+/usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle install
+echo 'Deadlock Guard beta installed. Open Settings → Deadlock Guard and check activation. Reload existing WebGUI tabs.' 
+</INLINE>
+  </FILE>
+  <FILE Run="/bin/bash" Method="remove">
+    <INLINE>
+set -euo pipefail
+/usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle remove
+rm -f /boot/config/plugins/deadlock-guard/deadlock-guard.cron
+/usr/local/sbin/update_cron
+removepkg deadlock-guard
+echo 'Deadlock Guard removed. Configuration and downloaded packages are retained on the flash drive.' 
+</INLINE>
+  </FILE>
+</PLUGIN>
