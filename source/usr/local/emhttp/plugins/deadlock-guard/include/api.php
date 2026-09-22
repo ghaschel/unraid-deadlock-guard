@@ -24,7 +24,7 @@ try{
         case 'status':$out=['job'=>Jobs::publicJob($s->job($b['id']??''))];break;
         case 'history':$out=['jobs'=>array_map([Jobs::class,'publicJob'],$s->jobs())];break;
         case 'console':$out=$p->console(Config::member($b['workload']??[]));break;
-        case 'reconcile':$l->install();$out=['jobs'=>array_map([Jobs::class,'publicJob'],(new Recovery($s,$p))->reconcile()),'health'=>$l->health()];foreach($s->active() as $j)if($j['status']==='queued')Launcher::worker($j['id']);break;
+        case 'reconcile':$l->check();$out=['jobs'=>array_map([Jobs::class,'publicJob'],(new Recovery($s,$p))->reconcile()),'health'=>$l->health()];foreach($s->active() as $j)if($j['status']==='queued')Launcher::worker($j['id']);break;
         default:throw new RuntimeException('Unknown endpoint operation',400);
     }
     echo json_encode($out,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);

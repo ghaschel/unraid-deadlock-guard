@@ -1,4 +1,27 @@
 #!/bin/bash
-# Owned by Deadlock Guard. Independent libvirt qemu.d hook; do not call libvirt here.
+# Owned by Deadlock Guard. Independent libvirt qemu.d hook; never call libvirt here.
 [ -f /boot/config/plugins/deadlock-guard/installed.json ] || exit 0
-exec /usr/bin/php -d auto_prepend_file= /usr/local/emhttp/plugins/deadlock-guard/scripts/hook.php "$@"
+exec /usr/bin/php -d auto_prepend_file= -r '
+$entry="/usr/local/emhttp/plugins/deadlock-guard/scripts/hook.php";
+$version=@parse_ini_file("/etc/unraid-version");
+if(is_file($entry) && preg_match("/^7\\.3\\.\\d+(?:[-.].*)?$/D",$version["version"]??"")){require $entry;exit(0);}
+// This script can survive in libvirt.img when a later boot cannot install the plugin.
+// Keep grouped starts blocked without taking unrelated VMs down with them.
+if(!in_array($argv[2]??"",["prepare","migrate","restore","attach"],true))exit(0);
+try{
+    $xml=stream_get_contents(STDIN,4194305);
+    if(strlen($xml)>4194304 || stripos($xml,"<!DOCTYPE")!==false || stripos($xml,"<!ENTITY")!==false)throw new RuntimeException("Invalid domain XML");
+    libxml_use_internal_errors(true);$dom=simplexml_load_string($xml,"SimpleXMLElement",LIBXML_NONET);
+    if(!$dom)throw new RuntimeException("Invalid domain XML");$uuid=strtolower((string)$dom->uuid);
+    if(!preg_match("/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/D",$uuid))throw new RuntimeException("Invalid VM UUID");
+    $cfg=json_decode(file_get_contents("/boot/config/plugins/deadlock-guard/config.json"),true,64,JSON_THROW_ON_ERROR);
+    if(($cfg["version"]??null)!==1 || !is_array($cfg["groups"]??null))throw new RuntimeException("Invalid configuration");
+    foreach($cfg["groups"] as $g){
+        if(!is_bool($g["enabled"]??null) || !is_array($g["members"]??null))throw new RuntimeException("Invalid group configuration");
+        foreach($g["members"] as $m){
+            if(!is_string($m["id"]??null) || !in_array($m["type"]??null,["vm","docker"],true))throw new RuntimeException("Invalid group member");
+            if($g["enabled"] && $m["type"]==="vm" && strtolower($m["id"])===$uuid)throw new RuntimeException("This grouped VM requires Deadlock Guard on Unraid 7.3.x. Restore the plugin or uninstall it before starting this VM.");
+        }
+    }
+}catch(Throwable $e){fwrite(STDERR,"Deadlock Guard unavailable: ".$e->getMessage()."\n");exit(1);}
+' -- "$@"

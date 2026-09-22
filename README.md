@@ -38,10 +38,12 @@ Open **Settings → Deadlock Guard** and check activation. A newly installed hoo
 
 - Flash: `/boot/config/plugins/deadlock-guard/config.json` (version 1 JSON), install marker, cron entry, downloaded packages.
 - RAM: `/var/run/deadlock-guard/` contains jobs, reservations, single-use permissions and VM lifecycle events. Completed history is limited to 200 jobs with 100 transitions each and clears on reboot.
-- Upgrades and ordinary uninstall preserve configuration. Installation refuses to overwrite a foreign hook of the same name and does not edit stock Unraid files. An uninstall marker makes a copy of our hook in an unmounted libvirt image harmless after removal.
+- Upgrades and ordinary uninstall preserve configuration. Installation refuses to overwrite a foreign hook of the same name and does not edit stock Unraid files. An uninstall marker makes a copy of our hook in an unmounted libvirt image harmless after removal. If a later boot cannot load the plugin (including an unsupported OS upgrade), the self-contained hook keeps grouped starts blocked and allows unrelated VMs. Remove the plugin before upgrading beyond 7.3.x.
 - Configuration changes, updates and removal are refused while jobs are active or quarantined. Configuration saves use an atomic rename and revision check.
 
 Use **Check integration and reconcile** after an interrupted worker. If a worker died between commands, reconciliation refreshes actual states and releases its reservations. If it may have submitted an operation to a daemon, the job stays quarantined **until host reboot**. Neither elapsed time nor a daemon PID change proves that a previously accepted start cannot still happen. Inspect workloads and shut down safely before rebooting. There is no unsafe force-unlock button.
+
+An update rejected because a job is active leaves the job and admission unchanged. An updater that exits before changing its payload is reconciled automatically once its process is gone. If package replacement was interrupted and files changed, maintenance remains blocked: reboot and reinstall the verified package before use. Periodic integration checks never recreate an uninstalled marker and do not rewrite installation intent to flash.
 
 ## Development and release
 

@@ -15,6 +15,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: mkdir -p dist && node tests/js/browser.cjs
       - run: python3 scripts/build.py --update-manifest && git diff --exit-code -- deadlock-guard.plg
+      - run: docker run --rm -v "$PWD:/app:ro" -w /app php:8.3-cli php tests/install-smoke.php
       - uses: actions/upload-artifact@v4
         with:
           name: deadlock-guard-beta

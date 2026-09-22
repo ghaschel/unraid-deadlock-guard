@@ -24,12 +24,13 @@ def build(output):
  def script(text,**attrs):ET.SubElement(ET.SubElement(root,'FILE',Run='/bin/bash',**attrs),'INLINE').text='\nset -euo pipefail\n'+text+'\n'
  script('''version=$(sed -n 's/^version="\\(.*\\)"/\\1/p' /etc/unraid-version)
 case "$version" in 7.3.[0-9]*) ;; *) echo "Deadlock Guard requires Unraid 7.3.x" >&2; exit 1;; esac
-if [ -x /usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle ]; then
-  /usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle upgrade
-fi
 mkdir -p /boot/config/plugins/deadlock-guard/packages''')
  file=ET.SubElement(root,'FILE',Name=package);ET.SubElement(file,'URL').text=base+'/releases/download/'+version+'/'+name;ET.SubElement(file,'SHA256').text=sha;ET.SubElement(file,'MD5').text=md5
  script(f'''printf '%s  %s\\n' '{sha}' '{package}' | sha256sum -c -
+if [ -x /usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle ]; then
+  /usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle check
+  /usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle upgrade "$$"
+fi
 upgradepkg --install-new '{package}'
 /usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle install
 echo 'Deadlock Guard beta installed. Open Settings → Deadlock Guard and check activation. Reload existing WebGUI tabs.' ''')

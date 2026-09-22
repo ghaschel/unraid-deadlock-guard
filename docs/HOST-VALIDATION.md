@@ -32,6 +32,8 @@ Record exact Unraid/PHP/Docker/libvirt versions, package SHA-256, browser versio
 - Verify existing browser tabs are reloaded after install/update, integration failure is visible, and post-handoff console windows open correctly.
 - Test unauthenticated requests, missing/wrong CSRF, invalid actions/IDs, shell metacharacters, HTML in names, stale configuration revisions and edits during jobs. No execution/injection or active-config overwrite.
 - Confirm settings display Docker restart-policy/autostart warnings and coverage limitations. Deliberately demonstrate a direct Docker start bypass on disposable workloads, then disable automatic starts again.
+- Interrupt an update before download/installation and during package extraction. Unchanged payload should recover admission only after its updater is gone; partial replacement must remain blocked. A refused update/remove during an active handoff must leave that handoff unaffected.
+- Simulate missing plugin payload and an unsupported 7.4 boot with the persistent hook present. Grouped VMs must fail with a useful error; unrelated VMs remain usable. Uninstall before an actual unsupported OS upgrade.
 - Uninstall while the libvirt image is mounted and unmounted. Foreign hooks/configuration remain; stale plugin hooks in an unmounted image must become harmless after uninstall.
 
 Attach completed results to a GitHub issue or release. Local automated checks are not a substitute for these tests.
