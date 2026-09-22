@@ -5,7 +5,7 @@ Record exact Unraid/PHP/Docker/libvirt versions, package SHA-256, browser versio
 ## Installation
 
 1. Build twice with `python3 scripts/build.py --update-manifest`; verify matching hashes. Copy the `.plg`, `.txz` and SHA256SUMS to the test host and run `sha256sum -c SHA256SUMS` there.
-2. Before public release, copy the `.txz` into `/boot/config/plugins/deadlock-guard/packages/` with its exact filename from the manifest; install the local manifest with `plugin install /path/to/deadlock-guard.plg`. The native installer reuses a valid cached package. Test again using the public release URLs after publication.
+2. Before public release, copy the `.txz` into `/boot/config/plugins/deadlock-guard/packages/` with its exact filename from the manifest; install the local manifest with `plugin install /path/to/deadlock-guard.plg`. Always use the full absolute manifest path: Unraid's PHP startup changes the working directory to `/usr/local/emhttp`, so `plugin install deadlock-guard.plg` can fail even after changing into the correct directory. The native installer reuses a valid cached package. Test again using the public release URLs after publication.
 3. Verify Settings → Deadlock Guard, permissions, plugin list, cron entry and independent hook. Existing hooks must be byte-identical. Confirm activation is pending if the VM service was already running. Stop/start it manually when safe; activation should then be ready.
 4. Reload all open WebGUI tabs. Confirm no stock PHP/JS files changed. Add groups, save, reload, and inspect the flash JSON. Test upgrade and uninstall with jobs idle and again with an active/quarantined job. Configuration must survive; busy operations must refuse.
 
@@ -37,3 +37,16 @@ Record exact Unraid/PHP/Docker/libvirt versions, package SHA-256, browser versio
 - Uninstall while the libvirt image is mounted and unmounted. Foreign hooks/configuration remain; stale plugin hooks in an unmounted image must become harmless after uninstall.
 
 Attach completed results to a GitHub issue or release. Local automated checks are not a substitute for these tests.
+
+## Installer cannot find or parse the manifest
+
+`XML file doesn't exist or xml parse error` is a combined missing-file/XML error. Check the actual path on the Unraid host and query the manifest version before installation:
+
+```sh
+ls -l /tmp/deadlock-guard-test/deadlock-guard.plg
+plugin version /tmp/deadlock-guard-test/deadlock-guard.plg
+```
+
+Use your actual absolute path if different. The version query is read-only and should print the build's `VERSION`. If that succeeds, install that same absolute path. If it fails despite the file existing, compare its SHA-256 with the transferred `SHA256SUMS` and check that the file is raw XML rather than a downloaded HTML page.
+
+The accompanying `unexpected EOF while looking for matching` quote errors can be secondary failures in Unraid's post-hook invocation: the plugin manager passes its `doesn't` error text into a shell command without escaping it. Reproduced using the official 7.3 plugin-manager source with a missing relative path; the same generated manifest parsed correctly through the absolute-path version query.
