@@ -1,0 +1,13 @@
+{
+  "name": "unraid-api-plugin-deadlock-guard",
+  "version": "0.1.0",
+  "description": "Deadlock Guard handoffs for Unraid API 4.37.4",
+  "type": "module",
+  "main": "index.mjs",
+  "exports": "./index.mjs",
+  "files": [
+    "*.mjs"
+  ],
+  "license": "MIT",
+  "private": true
+}

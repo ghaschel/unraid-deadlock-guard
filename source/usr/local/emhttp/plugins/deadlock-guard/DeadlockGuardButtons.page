@@ -1,9 +1,0 @@
-Menu="Buttons"
-Link="nav-user"
----
-<?php
-$dgVar=@parse_ini_file('/var/local/emhttp/var.ini')?:[];
-?>
-<link rel="stylesheet" href="/plugins/deadlock-guard/styles/deadlock-guard.css">
-<script>window.DeadlockGuardToken=<?=json_encode($dgVar['csrf_token']??'',JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT)?>;</script>
-<script src="/plugins/deadlock-guard/javascript/integration.js" defer></script>

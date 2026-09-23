@@ -1,0 +1,153 @@
+.dg-settings {
+  max-width: 1100px;
+  padding: 12px 24px 36px;
+}
+
+.dg-settings h2 small {
+  font-size: 0.55em;
+  opacity: 0.7;
+  margin-left: 12px;
+}
+
+.dg-actions {
+  display: flex;
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.dg-group {
+  border: 1px solid #8886;
+  border-radius: 6px;
+  padding: 20px;
+  margin: 20px 0;
+}
+
+.dg-group > label {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin: 12px 0;
+}
+
+.dg-group > label > span {
+  min-width: 270px;
+}
+
+.dg-group input[type='text'] {
+  width: 320px;
+}
+
+.dg-group input[type='number'] {
+  width: 100px;
+}
+
+.dg-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin: 12px 0 20px;
+}
+
+.dg-sources label {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 8px;
+}
+
+.dg-members {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px;
+  padding: 12px 0 22px;
+}
+
+.dg-members label {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.dg-settings details {
+  padding: 12px 0;
+  border-bottom: 1px solid #8883;
+}
+
+.dg-settings pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dg-settings #dg-message {
+  min-height: 24px;
+}
+
+.dg-settings #dg-message[data-kind='success'] {
+  color: #25816d;
+}
+
+.dg-settings #dg-message[data-kind='error'] {
+  color: #bf4e35;
+}
+
+.dg-settings .dg-health {
+  font-weight: 600;
+}
+
+.dg-settings button {
+  cursor: pointer;
+}
+
+@media (max-width: 650px) {
+  .dg-settings {
+    padding: 12px;
+  }
+
+  .dg-group > label {
+    display: block;
+  }
+
+  .dg-group > label > span {
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  .dg-group input[type='text'] {
+    max-width: 90%;
+  }
+
+  .dg-actions {
+    flex-wrap: wrap;
+  }
+}
+
+.dg-settings button[hidden] {
+  display: none;
+}
+
+.dg-settings button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.dg-settings #dg-service-errors {
+  color: #bf4e35;
+}
+
+.dg-settings #dg-troubleshooting {
+  margin-top: 24px;
+}
+
+.dg-settings #dg-troubleshooting > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.dg-settings .dg-health[data-kind='success'] {
+  color: #25816d;
+}
+
+.dg-settings .dg-health[data-kind='error'] {
+  color: #bf4e35;
+}

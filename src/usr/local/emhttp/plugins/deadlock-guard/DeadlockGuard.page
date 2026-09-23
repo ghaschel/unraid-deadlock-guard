@@ -1,0 +1,58 @@
+Menu="OtherSettings"
+Title="Deadlock Guard"
+Icon="shield"
+---
+<div id="deadlock-guard" class="dg-settings">
+  <h2>Deadlock Guard <small>Beta · Unraid 7.3.x</small></h2>
+  <p>Add VMs and containers that use the same hardware to a group. When you click Start in Unraid, Deadlock Guard stops the others in that group first to prevent hardware passthrough deadlocks.</p>
+  <p id="dg-health" class="dg-health" role="status">Loading integration status…</p>
+  <p id="dg-api-health" class="dg-health" role="status">Loading API integration status…</p>
+  <div id="dg-service-errors" role="status" hidden></div>
+  <p id="dg-message" role="status" aria-live="polite"></p>
+  <button type="button" id="dg-retry" hidden onclick="location.reload()">Retry</button>
+  <div id="dg-groups"></div>
+  <p>Save groups to apply your changes to future starts. Saving does not start or stop VMs or containers. Unchecked sources allow starts without that group’s handoffs. Other enabled groups still apply.</p>
+  <div class="dg-actions">
+    <button type="button" id="dg-add" disabled>Add exclusive group</button>
+    <button type="button" id="dg-save" disabled>Save groups</button>
+    <button type="button" id="dg-discard" hidden disabled>Discard changes</button>
+  </div>
+  <h3>Recent handoffs</h3>
+  <p>Accepted jobs continue after this page closes. History is kept in RAM until reboot (up to 200 completed jobs).</p>
+  <div id="dg-history"></div>
+  <details id="dg-troubleshooting">
+    <summary>Troubleshooting</summary>
+    <p>WebUI covers the VMs, Docker and Dashboard controls. API covers supported Unraid API clients, including nzb360, once API integration is active. Stopping a VM or container never starts another.</p>
+    <p>GPU/PCI driver binding must be configured separately. If a handoff fails, VMs and containers already stopped remain stopped.</p>
+    <p><strong>Check Integration</strong> checks VM and API protection and restores the VM hook if needed. It does not restart any service.</p>
+    <p>If API integration needs activation, run <code>unraid-api restart</code> in the Unraid terminal, then check integration again. This restarts the API service; running VMs and containers keep running. API requests are briefly unavailable.</p>
+    <p>If API setup failed, retry it with <code>/usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle api-install</code> before restarting the API. This beta targets Unraid API 4.37.4.</p>
+    <p>Until API integration is active, API starts do not trigger handoffs. Direct Docker commands and automatic starts also bypass handoffs. Direct starts of grouped VMs remain blocked by the VM safety gate.</p>
+    <p><strong>Check pending jobs</strong> reviews interrupted handoffs and retries jobs waiting to start. Jobs that may still have an operation in progress remain blocked.</p>
+    <div class="dg-actions">
+    <button type="button" id="dg-check-integration">Check Integration</button>
+    <button type="button" id="dg-check-pending">Check pending jobs</button>
+  </div>
+  </details>
+  <p><a href="https://github.com/ghaschel/unraid-deadlock-manager/issues" target="_blank" rel="noopener">Support on GitHub Issues</a></p>
+</div>
+<script>
+(function () {
+  const state = window.DeadlockGuardSettings = {};
+  state.failed = function (detail) {
+    clearTimeout(state.timer);
+    for (const id of ['dg-health', 'dg-api-health']) {
+      const health = document.getElementById(id);
+      health.textContent = 'Unable to load integration status.';
+      health.dataset.kind = 'error';
+    }
+    document.getElementById('dg-message').textContent = detail;
+    document.getElementById('dg-retry').hidden = false;
+  };
+  state.timer = setTimeout(
+    () => state.failed('The settings script did not start. Retry to reload the page.'),
+    15000,
+  );
+})();
+</script>
+<script src="/plugins/deadlock-guard/javascript/settings.js?v=<?=hash_file('sha256', "$docroot/plugins/deadlock-guard/javascript/settings.js")?>" defer onerror="window.DeadlockGuardSettings.failed('The settings script could not be loaded. Retry to reload the page.')"></script>

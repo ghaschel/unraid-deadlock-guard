@@ -1,41 +1,87 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<PLUGIN name="deadlock-guard" author="Guilherme Haschel" version="2026.09.22" launch="DeadlockGuard" pluginURL="https://raw.githubusercontent.com/ghaschel/unraid-deadlock-manager/main/deadlock-guard.plg" support="https://github.com/ghaschel/unraid-deadlock-manager/issues" icon="fa-shield" min="7.3.0" max="7.3.999">
-  <CHANGES>### 2026.09.22 — initial beta
-Native exclusive-group handoffs, VM safety gate, conservative recovery and Settings UI. Host validation required.</CHANGES>
+<!-- Edit this template; scripts/build.py generates the release manifest. -->
+<PLUGIN
+  name="deadlock-guard"
+  author="Guilherme Haschel"
+  version="2026.09.23a3"
+  launch="DeadlockGuard"
+  pluginURL="https://raw.githubusercontent.com/ghaschel/unraid-deadlock-manager/main/deadlock-guard.plg"
+  support="https://github.com/ghaschel/unraid-deadlock-manager/issues"
+  icon="fa-shield"
+  min="7.3.0"
+  max="7.3.999"
+>
+  <CHANGES><![CDATA[
+### 2026.09.23a3 — initial beta
+Native exclusive-group handoffs, VM safety gate, conservative recovery and Settings UI. Host validation required.
+  ]]></CHANGES>
+
+  <!-- Check the host before downloading or installing anything. -->
   <FILE Run="/bin/bash">
-    <INLINE>
+    <INLINE><![CDATA[
 set -euo pipefail
+
 version=$(sed -n 's/^version="\(.*\)"/\1/p' /etc/unraid-version)
-case "$version" in 7.3.[0-9]*) ;; *) echo "Deadlock Guard requires Unraid 7.3.x" &gt;&amp;2; exit 1;; esac
+case "$version" in
+  7.3.[0-9]*) ;;
+  *)
+    echo 'Deadlock Guard requires Unraid 7.3.x' >&2
+    exit 1
+    ;;
+esac
+
 mkdir -p /boot/config/plugins/deadlock-guard/packages
-</INLINE>
+    ]]></INLINE>
   </FILE>
-  <FILE Name="/boot/config/plugins/deadlock-guard/packages/deadlock-guard-2026.09.22-noarch-1.txz">
-    <URL>https://github.com/ghaschel/unraid-deadlock-manager/releases/download/2026.09.22/deadlock-guard-2026.09.22-noarch-1.txz</URL>
-    <SHA256>7ad2fbf3429358f26c078e090892e102b0e6c7ea88691887a574f6e8881fe991</SHA256>
-    <MD5>eb4394f266a44b6ba09c51d0b37be30e</MD5>
+
+  <!-- Versioned package and checksums are filled by the build script. -->
+  <FILE Name="/boot/config/plugins/deadlock-guard/packages/deadlock-guard-2026.09.23a3-noarch-1.txz">
+    <URL>https://github.com/ghaschel/unraid-deadlock-manager/releases/download/2026.09.23a3/deadlock-guard-2026.09.23a3-noarch-1.txz</URL>
+    <SHA256>32c9ca8e832a6a2dc46da1e4d113d8a8d9980047614a6ee0af38b7f7c64068b4</SHA256>
+    <MD5>22d8da7c80310af739afea372fdc9060</MD5>
   </FILE>
+
+  <!-- Install the exact verified package, retaining the existing configuration. -->
   <FILE Run="/bin/bash">
-    <INLINE>
+    <INLINE><![CDATA[
 set -euo pipefail
-printf '%s  %s\n' '7ad2fbf3429358f26c078e090892e102b0e6c7ea88691887a574f6e8881fe991' '/boot/config/plugins/deadlock-guard/packages/deadlock-guard-2026.09.22-noarch-1.txz' | sha256sum -c -
-if [ -x /usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle ]; then
-  /usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle check
-  /usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle upgrade "$$"
+
+package='/boot/config/plugins/deadlock-guard/packages/deadlock-guard-2026.09.23a3-noarch-1.txz'
+plugin_dir='/usr/local/emhttp/plugins/deadlock-guard'
+expected_version='2026.09.23a3'
+
+printf '%s  %s\n' '32c9ca8e832a6a2dc46da1e4d113d8a8d9980047614a6ee0af38b7f7c64068b4' "$package" | sha256sum -c -
+
+if [[ -x "$plugin_dir/scripts/lifecycle" ]]; then
+  "$plugin_dir/scripts/lifecycle" check
+  "$plugin_dir/scripts/lifecycle" upgrade "$$"
 fi
-upgradepkg --install-new '/boot/config/plugins/deadlock-guard/packages/deadlock-guard-2026.09.22-noarch-1.txz'
-/usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle install
-echo 'Deadlock Guard beta installed. Open Settings → Deadlock Guard and check activation. Reload existing WebGUI tabs.' 
-</INLINE>
+
+# Install the version selected by this manifest, including same-version test rebuilds.
+upgradepkg --install-new --reinstall "$package"
+
+installed_version=$(cat "$plugin_dir/VERSION" 2>/dev/null || true)
+if [[ "$installed_version" != "$expected_version" ]]; then
+  printf 'Deadlock Guard installation failed: expected %s, found %s.\n' \
+    "$expected_version" "${installed_version:-missing}" >&2
+  exit 1
+fi
+
+"$plugin_dir/scripts/lifecycle" install
+echo 'Deadlock Guard installed.'
+echo 'REBOOT REQUIRED after first installation: reboot Unraid when safe to activate VM protection.'
+    ]]></INLINE>
   </FILE>
+
+  <!-- Remove only plugin-owned files. Configuration and packages are retained. -->
   <FILE Run="/bin/bash" Method="remove">
-    <INLINE>
+    <INLINE><![CDATA[
 set -euo pipefail
+
 /usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle remove
-rm -f /boot/config/plugins/deadlock-guard/deadlock-guard.cron
-/usr/local/sbin/update_cron
 removepkg deadlock-guard
-echo 'Deadlock Guard removed. Configuration and downloaded packages are retained on the flash drive.' 
-</INLINE>
+
+echo 'Deadlock Guard removed. Configuration and downloaded packages are retained on the flash drive.'
+    ]]></INLINE>
   </FILE>
 </PLUGIN>

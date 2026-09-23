@@ -1,2 +1,0 @@
-#!/bin/bash
-/usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle activate 2>&1 | logger -t deadlock-guard

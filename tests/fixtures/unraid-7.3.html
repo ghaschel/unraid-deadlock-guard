@@ -8,5 +8,6 @@ function startAll(){nativeCalls.push({bulk:true})}
 function resumeAll(){nativeCalls.push({resume:true})}
 function loadlist(){}
 </script>
-<link rel="stylesheet" href="/source/usr/local/emhttp/plugins/deadlock-guard/styles/deadlock-guard.css">
-<script src="/source/usr/local/emhttp/plugins/deadlock-guard/javascript/integration.js" defer></script></head><body><nav>Unraid · Dashboard · Docker · VMs · Settings</nav><main><div id="native-fixture"><button id="start-container" onclick="eventControl({action:'start',container:'aaaaaaaaaaaa'},'loadlist')">Start FileFlows</button><button id="start-vm" onclick="ajaxVMDispatch({action:'domain-start',uuid:'11111111-1111-1111-1111-111111111111'},'loadlist')">Start Windows</button><button id="bulk" onclick="startAll()">Start all</button></div><div id="settings-fixture"></div></main></body></html>
+<script src="/tests/fixtures/unraid-toast.js"></script>
+<link rel="stylesheet" href="/src/usr/local/emhttp/plugins/deadlock-guard/styles/deadlock-guard.css">
+<script src="/src/usr/local/emhttp/plugins/deadlock-guard/javascript/integration.js" defer></script></head><body><nav>Unraid · Dashboard · Docker · VMs · Settings</nav><main><div id="native-fixture"><button id="start-container" onclick="eventControl({action:'start',container:'aaaaaaaaaaaa'},'loadlist')">Start FileFlows</button><button id="start-vm" onclick="ajaxVMDispatch({action:'domain-start',uuid:'11111111-1111-1111-1111-111111111111'},'loadlist')">Start Windows</button><button id="bulk" onclick="startAll()">Start all</button></div><div id="settings-fixture"></div></main></body></html>

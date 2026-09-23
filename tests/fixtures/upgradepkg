@@ -1,0 +1,30 @@
+#!/bin/bash
+# Disposable Linux test adapter, not the Unraid package manager.
+# Model the observed successful skip and PHP version ordering; extract real payloads.
+set -euo pipefail
+reinstall=false
+for arg in "$@"; do
+  case "$arg" in
+    --reinstall) reinstall=true ;;
+    --install-new) ;;
+    --*) exit 2 ;;
+    *) archive="$arg" ;;
+  esac
+done
+if [[ ${DG_TEST_SKIP_PACKAGE:-0} == 1 ]]; then
+  echo 'Simulated package manager skip'
+  exit 0
+fi
+base=/usr/local/emhttp/plugins/deadlock-guard
+name=${archive##*/}
+version=${name#deadlock-guard-}
+version=${version%-noarch-1.txz}
+if [[ -f "$base/VERSION" && "$reinstall" == false ]]; then
+  old_version=$(cat "$base/VERSION")
+  if /usr/bin/php -r 'exit(version_compare($argv[1], $argv[2], ">=") ? 0 : 1);' "$old_version" "$version"; then
+    echo 'Skipping package (same or newer version already installed)'
+    exit 0
+  fi
+fi
+tar -xJf "$archive" -C /
+bash /install/doinst.sh

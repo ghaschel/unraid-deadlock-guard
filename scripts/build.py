@@ -1,48 +1,148 @@
 #!/usr/bin/env python3
-"""Build a deterministic, runtime-dependency-free Unraid Slackware package."""
-import argparse, hashlib, io, lzma, pathlib, re, tarfile, xml.etree.ElementTree as ET
-ROOT=pathlib.Path(__file__).resolve().parents[1]
-def build(output):
- version=(ROOT/'VERSION').read_text().strip()
- if not re.fullmatch(r'\d{4}\.\d{2}\.\d{2}(?:[a-z]\d+)?',version):raise ValueError('Invalid release version')
- output.mkdir(parents=True,exist_ok=True);name=f'deadlock-guard-{version}-noarch-1.txz'
- prefix='usr/local/emhttp/plugins/deadlock-guard/'
- files={str(p.relative_to(ROOT/'source')):(p.read_bytes(),0o755 if p.stat().st_mode&0o111 else 0o644) for p in (ROOT/'source').rglob('*') if p.is_file()}
- for name_in in ['LICENSE','icon.svg','README.md']:files[prefix+name_in]=((ROOT/name_in).read_bytes(),0o644)
- files[prefix+'VERSION']=((version+'\n').encode(),0o644)
- files['install/slack-desc']=(b'deadlock-guard: Deadlock Guard (VM and Docker handoff manager)\ndeadlock-guard: Native Unraid 7.3.x beta plugin. MIT license.\n',0o644)
- buffer=io.BytesIO()
- with tarfile.open(fileobj=buffer,mode='w',format=tarfile.USTAR_FORMAT) as tar:
-  for path,(data,mode) in sorted(files.items()):
-   info=tarfile.TarInfo(path);info.size=len(data);info.mode=mode;info.uid=info.gid=0;info.uname=info.gname='root';info.mtime=0;tar.addfile(info,io.BytesIO(data))
- payload=lzma.compress(buffer.getvalue(),format=lzma.FORMAT_XZ,preset=9,check=lzma.CHECK_CRC64);(output/name).write_bytes(payload)
- sha=hashlib.sha256(payload).hexdigest();md5=hashlib.md5(payload).hexdigest()
- base='https://github.com/ghaschel/unraid-deadlock-manager';url='https://raw.githubusercontent.com/ghaschel/unraid-deadlock-manager/main/deadlock-guard.plg'
- package='/boot/config/plugins/deadlock-guard/packages/'+name
- root=ET.Element('PLUGIN',name='deadlock-guard',author='Guilherme Haschel',version=version,launch='DeadlockGuard',pluginURL=url,support=base+'/issues',icon='fa-shield',min='7.3.0',max='7.3.999')
- ET.SubElement(root,'CHANGES').text=f'### {version} — initial beta\nNative exclusive-group handoffs, VM safety gate, conservative recovery and Settings UI. Host validation required.'
- def script(text,**attrs):ET.SubElement(ET.SubElement(root,'FILE',Run='/bin/bash',**attrs),'INLINE').text='\nset -euo pipefail\n'+text+'\n'
- script('''version=$(sed -n 's/^version="\\(.*\\)"/\\1/p' /etc/unraid-version)
-case "$version" in 7.3.[0-9]*) ;; *) echo "Deadlock Guard requires Unraid 7.3.x" >&2; exit 1;; esac
-mkdir -p /boot/config/plugins/deadlock-guard/packages''')
- file=ET.SubElement(root,'FILE',Name=package);ET.SubElement(file,'URL').text=base+'/releases/download/'+version+'/'+name;ET.SubElement(file,'SHA256').text=sha;ET.SubElement(file,'MD5').text=md5
- script(f'''printf '%s  %s\\n' '{sha}' '{package}' | sha256sum -c -
-if [ -x /usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle ]; then
-  /usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle check
-  /usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle upgrade "$$"
-fi
-upgradepkg --install-new '{package}'
-/usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle install
-echo 'Deadlock Guard beta installed. Open Settings → Deadlock Guard and check activation. Reload existing WebGUI tabs.' ''')
- script('''/usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle remove
-rm -f /boot/config/plugins/deadlock-guard/deadlock-guard.cron
-/usr/local/sbin/update_cron
-removepkg deadlock-guard
-echo 'Deadlock Guard removed. Configuration and downloaded packages are retained on the flash drive.' ''',Method='remove')
- ET.indent(root);manifest=b'<?xml version="1.0" encoding="UTF-8"?>\n'+ET.tostring(root,encoding='utf-8')+b'\n';(output/'deadlock-guard.plg').write_bytes(manifest)
- sums=[]
- for p in [output/name,output/'deadlock-guard.plg']:sums.append(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name)
- (output/'SHA256SUMS').write_text('\n'.join(sums)+'\n');print(f'Built {name}: {sha}')
-if __name__=='__main__':
- parser=argparse.ArgumentParser();parser.add_argument('--output',type=pathlib.Path,default=ROOT/'dist');parser.add_argument('--update-manifest',action='store_true');args=parser.parse_args();build(args.output)
- if args.update_manifest:(ROOT/'deadlock-guard.plg').write_bytes((args.output/'deadlock-guard.plg').read_bytes())
+"""Build the Unraid package, plugin manifest, and checksum file.
+
+The installable filesystem lives in src/. Plugin metadata and installation
+commands live in packaging/deadlock-guard.plg.template.
+"""
+
+import argparse
+import gzip
+import hashlib
+import io
+import lzma
+import re
+import tarfile
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE_DIR = ROOT / "src"
+MANIFEST_TEMPLATE = ROOT / "packaging" / "deadlock-guard.plg.template"
+PLUGIN_DIR = "usr/local/emhttp/plugins/deadlock-guard"
+MANIFEST_NAME = "deadlock-guard.plg"
+
+
+def read_version() -> str:
+    version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    if not re.fullmatch(r"\d{4}\.\d{2}\.\d{2}(?:[a-z]\d+)?", version):
+        raise ValueError(f"Invalid release version: {version!r}")
+    return version
+
+
+def collect_package_files(version: str) -> dict[str, tuple[bytes, int]]:
+    """Map each installed path to its contents and Unix permissions."""
+    files = {}
+    for path in SOURCE_DIR.rglob("*"):
+        if path.is_file():
+            name = path.relative_to(SOURCE_DIR).as_posix()
+            mode = 0o755 if path.stat().st_mode & 0o111 else 0o644
+            files[name] = (path.read_bytes(), mode)
+
+    for name in ("LICENSE", "icon.svg"):
+        files[f"{PLUGIN_DIR}/{name}"] = ((ROOT / name).read_bytes(), 0o644)
+
+    files[f"{PLUGIN_DIR}/VERSION"] = (f"{version}\n".encode("utf-8"), 0o644)
+    module_files = {
+        "package/" + name.removeprefix(f"{PLUGIN_DIR}/api-plugin/"): payload
+        for name, payload in files.items()
+        if name.startswith(f"{PLUGIN_DIR}/api-plugin/")
+    }
+    module_files["package/LICENSE"] = ((ROOT / "LICENSE").read_bytes(), 0o644)
+    files[f"{PLUGIN_DIR}/api-plugin.tgz"] = (
+        gzip.compress(tar_bytes(module_files), mtime=0), 0o644
+    )
+    return files
+
+
+def tar_bytes(files: dict[str, tuple[bytes, int]]) -> bytes:
+    """Create a tar archive with normalized ownership, order and dates."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT) as archive:
+        for name, (contents, mode) in sorted(files.items()):
+            entry = tarfile.TarInfo(name)
+            entry.size = len(contents)
+            entry.mode = mode
+            entry.uid = entry.gid = 0
+            entry.uname = entry.gname = "root"
+            entry.mtime = 0
+            archive.addfile(entry, io.BytesIO(contents))
+
+    return buffer.getvalue()
+
+
+def write_package(path: Path, files: dict[str, tuple[bytes, int]]) -> None:
+    """Compress the reproducible tar archive for the Unraid package manager."""
+    compressed = lzma.compress(
+        tar_bytes(files),
+        format=lzma.FORMAT_XZ,
+        preset=9,
+        check=lzma.CHECK_CRC64,
+    )
+    path.write_bytes(compressed)
+
+
+def write_manifest(path: Path, package: Path, version: str) -> None:
+    """Fill the release values without escaping or rewriting the Bash commands."""
+    payload = package.read_bytes()
+    values = {
+        "VERSION": version,
+        "PACKAGE_NAME": package.name,
+        "SHA256": hashlib.sha256(payload).hexdigest(),
+        # Unraid's plugin manager also consumes the legacy MD5 field.
+        "MD5": hashlib.md5(payload).hexdigest(),
+    }
+
+    manifest = MANIFEST_TEMPLATE.read_text(encoding="utf-8")
+    for name, value in values.items():
+        manifest = manifest.replace(f"@{name}@", value)
+
+    if re.search(r"@[A-Z_0-9]+@", manifest):
+        raise ValueError("Unresolved release value in the plugin manifest")
+    ET.fromstring(manifest)
+    path.write_text(manifest, encoding="utf-8")
+
+
+def write_checksums(output: Path, artifacts: list[Path]) -> None:
+    lines = []
+    for artifact in artifacts:
+        checksum = hashlib.sha256(artifact.read_bytes()).hexdigest()
+        lines.append(f"{checksum}  {artifact.name}\n")
+    (output / "SHA256SUMS").write_text("".join(lines), encoding="utf-8")
+
+
+def build(output: Path) -> None:
+    version = read_version()
+    output.mkdir(parents=True, exist_ok=True)
+
+    package = output / f"deadlock-guard-{version}-noarch-1.txz"
+    manifest = output / MANIFEST_NAME
+
+    write_package(package, collect_package_files(version))
+    write_manifest(manifest, package, version)
+    write_checksums(output, [package, manifest])
+    print(f"Built {package.name}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=ROOT / "dist",
+        help="Artifact directory (default: dist/)",
+    )
+    parser.add_argument(
+        "--update-manifest",
+        action="store_true",
+        help="Also update the repository's generated deadlock-guard.plg",
+    )
+    args = parser.parse_args()
+
+    build(args.output)
+    if args.update_manifest:
+        (ROOT / MANIFEST_NAME).write_bytes((args.output / MANIFEST_NAME).read_bytes())
+
+
+if __name__ == "__main__":
+    main()
