@@ -53,6 +53,13 @@ class PackageTest(unittest.TestCase):
                 names = archive.getnames()
                 self.assertIn(f"{PLUGIN_DIR}/scripts/qemu-hook", names)
                 module = archive.extractfile(f"{PLUGIN_DIR}/api-plugin.tgz").read()
+                # The gzip OS field must be portable. Python 3.12's one-shot
+                # compressor leaks the host value here even when mtime is zero.
+                self.assertEqual(
+                    module[9],
+                    255,
+                    "Bundled API archive contains host-specific gzip metadata",
+                )
                 with tarfile.open(fileobj=io.BytesIO(module), mode="r:gz") as npm:
                     self.assertIn("package/LICENSE", npm.getnames())
                     for name in ("package.json", "index.mjs", "adapter.mjs", "graphql.mjs", "runtime.mjs"):

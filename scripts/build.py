@@ -50,7 +50,7 @@ def collect_package_files(version: str) -> dict[str, tuple[bytes, int]]:
     }
     module_files["package/LICENSE"] = ((ROOT / "LICENSE").read_bytes(), 0o644)
     files[f"{PLUGIN_DIR}/api-plugin.tgz"] = (
-        gzip.compress(tar_bytes(module_files), mtime=0), 0o644
+        gzip_bytes(tar_bytes(module_files)), 0o644
     )
     return files
 
@@ -68,6 +68,22 @@ def tar_bytes(files: dict[str, tuple[bytes, int]]) -> bytes:
             entry.mtime = 0
             archive.addfile(entry, io.BytesIO(contents))
 
+    return buffer.getvalue()
+
+
+def gzip_bytes(contents: bytes) -> bytes:
+    """Use a portable gzip header across Python versions and operating systems."""
+    buffer = io.BytesIO()
+    # gzip.compress(..., mtime=0) leaks zlib's OS byte on Python 3.11/3.12.
+    # GzipFile writes a portable header and omits the original filename.
+    with gzip.GzipFile(
+        fileobj=buffer,
+        mode="wb",
+        filename="",
+        compresslevel=9,
+        mtime=0,
+    ) as archive:
+        archive.write(contents)
     return buffer.getvalue()
 
 
