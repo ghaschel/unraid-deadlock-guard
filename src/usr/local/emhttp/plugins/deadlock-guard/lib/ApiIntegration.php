@@ -31,13 +31,11 @@ final class ApiIntegration
         try {
             $error = $this->store->runDir . '/api-install-error.json';
             if (is_file($error)) {
-                return [
-                    'ready' => false,
-                    'message' =>
-                        'API setup failed: ' .
-                        (Store::read($error)['error'] ?? 'Unknown error') .
-                        '. See Troubleshooting.',
-                ];
+                return $this->failure(
+                    Store::read($error)['error'] ?? 'Unknown error',
+                    'API setup failed: ',
+                    '. See Troubleshooting.',
+                );
             }
             $path = $this->store->runDir . '/api-integration.json';
             if (!is_file($path)) {
@@ -55,13 +53,10 @@ final class ApiIntegration
                 ];
             }
             if (!empty($record['error'])) {
-                return [
-                    'ready' => false,
-                    'message' => 'API integration unavailable: ' . $record['error'],
-                ];
+                return $this->failure($record['error'], 'API integration unavailable: ');
             }
             if ($versionError = ApiVersion::error($record['apiVersion'] ?? null)) {
-                return ['ready' => false, 'message' => $versionError];
+                return $this->failure($versionError);
             }
             if (($record['hash'] ?? '') !== $this->hash()) {
                 return [
@@ -82,6 +77,16 @@ final class ApiIntegration
                 'message' => 'Unable to check API integration: ' . $error->getMessage(),
             ];
         }
+    }
+
+    /** Keep version details available for diagnostics without crowding the status line. */
+    private function failure(string $error, string $prefix = '', string $suffix = ''): array
+    {
+        $requirement = ApiVersion::requirement();
+        if (str_starts_with($error, $requirement)) {
+            return ['ready' => false, 'message' => $requirement, 'details' => $error];
+        }
+        return ['ready' => false, 'message' => $prefix . $error . $suffix];
     }
 
     public function assertReady(string $adapterHash): void

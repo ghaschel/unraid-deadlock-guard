@@ -122,7 +122,7 @@ test('API installer accepts compatible versions and repairs the saved setup erro
     foreach ($cases as $case) {
         [$dir, $store, $module, $runner, $installer] = apiInstallerFixture($case['version']);
         Store::atomic($store->runDir . '/api-install-error.json', [
-            'error' => 'Previous rejection',
+            'error' => 'This beta requires Unraid API 4.37.4',
         ]);
         if ($case['compatible']) {
             $installer->install();
@@ -143,7 +143,7 @@ test('API setup errors persist through incomplete registration and archive retri
     foreach (['npm', 'plugins', 'archive-dependencies'] as $failure) {
         [$dir, $store, $module, $runner, $installer] = apiInstallerFixture('4.37.4+ad268301');
         Store::atomic($store->runDir . '/api-install-error.json', [
-            'error' => 'Previous rejection',
+            'error' => 'This beta requires Unraid API 4.37.4',
         ]);
         $runner->failCommand = $failure;
         raises(fn() => $installer->install(), 'Simulated setup failure');

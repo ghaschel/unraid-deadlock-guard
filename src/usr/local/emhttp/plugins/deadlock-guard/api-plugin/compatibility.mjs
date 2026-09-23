@@ -2,7 +2,7 @@ export const minimumApiVersion = '4.36.0';
 
 export function apiVersionError(version) {
   const shown = typeof version === 'string' && version !== '' ? version : '(missing or invalid)';
-  const error = `Unsupported Unraid API version ${shown}; requires ${minimumApiVersion} or newer.`;
+  const error = `Unraid API ${minimumApiVersion} or newer is required. See Troubleshooting. Detected API version: ${shown}.`;
   if (typeof version !== 'string' || version.length > 255) return error;
   const parts =
     /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(

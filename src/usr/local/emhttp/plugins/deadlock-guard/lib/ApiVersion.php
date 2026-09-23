@@ -7,15 +7,15 @@ final class ApiVersion
 {
     public const MINIMUM = '4.36.0';
 
+    public static function requirement(): string
+    {
+        return 'Unraid API ' . self::MINIMUM . ' or newer is required. See Troubleshooting.';
+    }
+
     public static function error(mixed $version): ?string
     {
         $shown = is_string($version) && $version !== '' ? $version : '(missing or invalid)';
-        $error =
-            'Unsupported Unraid API version ' .
-            $shown .
-            '; requires ' .
-            self::MINIMUM .
-            ' or newer.';
+        $error = self::requirement() . ' Detected API version: ' . $shown . '.';
         if (
             !is_string($version) ||
             strlen($version) > 255 ||

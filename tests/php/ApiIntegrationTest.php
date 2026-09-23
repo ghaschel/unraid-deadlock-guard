@@ -50,8 +50,49 @@ test(
             $health = $integration->health();
             eq($health['ready'], $case['compatible']);
             if (!$case['compatible'] && is_string($case['version']) && $case['version'] !== '') {
-                ok(str_contains($health['message'], $case['version']));
+                ok(str_contains($health['details'], $case['version']));
             }
         }
+    },
+);
+
+test(
+    'API version failures show a concise requirement and retain detected-version details',
+    function () {
+        $dir = tempdir();
+        $store = new Store($dir . '/run', $dir . '/config');
+        $module = $dir . '/module';
+        mkdir($module);
+        file_put_contents($module . '/index.mjs', 'module');
+        $integration = new ApiIntegration($store, $module);
+        $error = DeadlockGuard\ApiVersion::error('4.35.9+hostbuild');
+        foreach (['installer', 'runtime', 'health'] as $stage) {
+            $record = [
+                'pid' => getmypid(),
+                'processIdentity' => ProcessIdentity::of(getmypid()),
+                'hash' => $integration->hash(),
+                'apiVersion' => '4.35.9+hostbuild',
+            ];
+            if ($stage === 'installer') {
+                Store::atomic($store->runDir . '/api-install-error.json', ['error' => $error]);
+            } else {
+                if ($stage === 'runtime') {
+                    $record['error'] = $error;
+                }
+                Store::atomic($store->runDir . '/api-integration.json', $record);
+            }
+            $health = $integration->health();
+            eq($health['ready'], false);
+            eq($health['message'], 'Unraid API 4.36.0 or newer is required. See Troubleshooting.');
+            ok(str_contains($health['details'], '4.35.9+hostbuild'));
+            @unlink($store->runDir . '/api-install-error.json');
+        }
+        Store::atomic($store->runDir . '/api-install-error.json', [
+            'error' => 'Registration failed',
+        ]);
+        eq(
+            $integration->health()['message'],
+            'API setup failed: Registration failed. See Troubleshooting.',
+        );
     },
 );
