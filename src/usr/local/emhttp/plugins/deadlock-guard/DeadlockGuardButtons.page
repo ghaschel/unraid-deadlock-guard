@@ -1,0 +1,18 @@
+Menu="Buttons"
+Link="nav-user"
+---
+<?php
+$dgVariables = @parse_ini_file('/var/local/emhttp/var.ini') ?: [];
+$dgAssets = "$docroot/plugins/deadlock-guard";
+$dgStylesHash = hash_file('sha256', "$dgAssets/styles/deadlock-guard.css");
+$dgIntegrationHash = hash_file('sha256', "$dgAssets/javascript/integration.js");
+$dgToken = json_encode(
+    $dgVariables['csrf_token'] ?? '',
+    JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT,
+);
+?>
+<link rel="stylesheet" href="/plugins/deadlock-guard/styles/deadlock-guard.css?v=<?= $dgStylesHash ?>">
+<script>
+  window.DeadlockGuardToken = <?= $dgToken ?>;
+</script>
+<script src="/plugins/deadlock-guard/javascript/integration.js?v=<?= $dgIntegrationHash ?>" defer></script>

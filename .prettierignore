@@ -1,0 +1,15 @@
+dist/
+node_modules/
+tests/api/node_modules/
+**/package-lock.json
+# Unraid page headers are not HTML; retain their native syntax.
+*.page
+# Generated manifests and upstream browser fixture assets.
+*.plg
+*.template
+tests/fixtures/unraid-toast.js
+tests/fixtures/unraid-7.3.html
+# Keep documentation diffs focused on content, not paragraph wrapping.
+*.md
+*.xml
+*.svg

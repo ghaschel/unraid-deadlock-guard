@@ -1,0 +1,3 @@
+#!/bin/bash
+set -euo pipefail
+exec /usr/bin/php -d auto_prepend_file= /usr/local/emhttp/plugins/deadlock-guard/scripts/cli.php "$@"

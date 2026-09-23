@@ -1,0 +1,16 @@
+{
+  "name": "deadlock-guard-development",
+  "private": true,
+  "description": "Development-only formatting and browser test tools; excluded from the Unraid package.",
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "./scripts/test.sh",
+    "test:browser": "node tests/js/browser.cjs && node tests/js/settings-browser.cjs"
+  },
+  "devDependencies": {
+    "@prettier/plugin-php": "0.24.0",
+    "playwright": "1.55.1",
+    "prettier": "3.6.2"
+  }
+}

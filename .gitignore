@@ -1,2 +1,6 @@
 .DS_Store
 Thumbs.db
+/dist/
+/node_modules/
+__pycache__/
+/tests/api/node_modules/

@@ -1,0 +1,16 @@
+{
+  "name": "deadlock-guard-api-tests",
+  "private": true,
+  "description": "Development dependencies matching Unraid API 4.37.4",
+  "scripts": {
+    "test": "node --test *.test.cjs"
+  },
+  "dependencies": {
+    "@nestjs/common": "11.1.26",
+    "@nestjs/core": "11.1.26",
+    "@nestjs/graphql": "13.4.2",
+    "graphql": "16.11.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  }
+}
