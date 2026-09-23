@@ -42,7 +42,7 @@ Run `python3 scripts/build.py`. It writes a candidate package, manifest and chec
 
 Only release preparation uses `--update-manifest`. Do not commit a development package's checksum into the public update manifest. The builder normalizes file ordering, ownership, timestamps and permissions for reproducible packages.
 
-For installation before publication, follow [the local host installation steps](HOST-VALIDATION.md#installation). Configuration survives updates and ordinary uninstall. Load an updated API module with a manual `unraid-api restart` when Settings requests it; a normal plugin update does not automatically require an Unraid reboot.
+For installation before publication, follow [the local host installation steps](HOST-VALIDATION.md#installation). Reinstall a same-version test build with `plugin install /absolute/path/deadlock-guard.plg forced`; ordinary installation rejects a matching version before running the manifest. Configuration survives updates and ordinary uninstall. Load an updated API module with a manual `unraid-api restart` when Settings requests it; a normal plugin update does not automatically require an Unraid reboot.
 
 ## First Community Apps listing
 
