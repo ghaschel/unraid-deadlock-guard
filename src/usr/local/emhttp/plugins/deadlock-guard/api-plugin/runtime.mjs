@@ -3,8 +3,6 @@ import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const supportedApiVersion = '4.37.4';
-
 export const pluginRoot = '/usr/local/emhttp/plugins/deadlock-guard';
 export const runDir = '/var/run/deadlock-guard';
 export const installMarker = '/boot/config/plugins/deadlock-guard/installed.json';

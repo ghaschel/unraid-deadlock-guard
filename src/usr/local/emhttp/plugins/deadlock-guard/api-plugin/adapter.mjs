@@ -17,6 +17,15 @@ export function installAdapter({
 }) {
   const context = new AsyncLocalStorage();
   const bindings = [];
+  if (typeof authorize !== 'function') throw Error('API authorization is unavailable');
+  const roots = schema?.getMutationType?.()?.getFields?.();
+  for (const [name, type] of [
+    ['docker', 'DockerMutations!'],
+    ['vm', 'VmMutations!'],
+  ]) {
+    if (String(roots?.[name]?.type) !== type)
+      throw Error('Unsupported Unraid API interface: Mutation.' + name);
+  }
   for (const [typeName, fields] of Object.entries(operations)) {
     const type = schema.getType(typeName);
     for (const [name, operation] of Object.entries(fields)) {
@@ -28,12 +37,22 @@ export function installAdapter({
       ) {
         throw Error('Unsupported Unraid API interface: ' + typeName + '.' + name);
       }
+      const resultType = operation.type === 'vm' ? 'Boolean!' : 'DockerContainer!';
+      if (
+        field.args.length !== 1 ||
+        field.args[0].name !== 'id' ||
+        String(field.args[0].type) !== 'PrefixedID!' ||
+        String(field.type) !== resultType
+      ) {
+        throw Error('Unsupported Unraid API argument/result interface: ' + typeName + '.' + name);
+      }
+      assertWritable(field, 'resolve');
+      assertWritable(service, operation.method);
       bindings.push({
         field,
         service,
         operation,
         original: service[operation.method],
-        originalResolver: field.resolve,
       });
     }
   }
@@ -41,15 +60,16 @@ export function installAdapter({
     throw Error('Unsupported Docker mutation result interface');
   }
 
+  const replacements = [];
   for (const { field, service, operation, original } of bindings) {
     const originalResolver = field.resolve;
-    field.resolve = function (parent, args, requestContext, info) {
+    const resolver = function (parent, args, requestContext, info) {
       return context.run({ requestContext, info, operation, id: args.id }, () =>
         originalResolver.call(this, parent, args, requestContext, info),
       );
     };
 
-    service[operation.method] = async function (...args) {
+    const method = async function (...args) {
       const call = context.getStore();
       if (!enabled() || !call || call.operation !== operation || call.id !== args[0]) {
         return original.apply(this, args);
@@ -82,12 +102,47 @@ export function installAdapter({
       if (operation.type === 'vm') return true;
       return this.finalizeMutation(args[0], 'Deadlock Guard handoff');
     };
+    replacements.push({ object: field, key: 'resolve', value: resolver });
+    replacements.push({ object: service, key: operation.method, value: method });
   }
 
-  return () => {
-    for (const { field, service, operation, original, originalResolver } of bindings) {
-      service[operation.method] = original;
-      field.resolve = originalResolver;
+  const applied = [];
+  const restore = () => {
+    for (const { object, key, value, descriptor } of [...applied].reverse()) {
+      if (object[key] !== value) continue;
+      if (descriptor) Object.defineProperty(object, key, descriptor);
+      else delete object[key];
     }
   };
+  try {
+    for (const replacement of replacements) {
+      const { object, key, value } = replacement;
+      const descriptor = Object.getOwnPropertyDescriptor(object, key);
+      Object.defineProperty(
+        object,
+        key,
+        descriptor
+          ? { ...descriptor, value }
+          : {
+              value,
+              writable: true,
+              configurable: true,
+              enumerable: true,
+            },
+      );
+      applied.push({ ...replacement, descriptor });
+    }
+  } catch (error) {
+    restore();
+    throw Error('Unable to install Unraid API interface: ' + error.message);
+  }
+  return restore;
+}
+
+function assertWritable(object, key) {
+  const descriptor = Object.getOwnPropertyDescriptor(object, key);
+  const writable = descriptor
+    ? Object.hasOwn(descriptor, 'value') && descriptor.writable
+    : Object.isExtensible(object);
+  if (!writable) throw Error('Unsupported readonly Unraid API interface: ' + key);
 }

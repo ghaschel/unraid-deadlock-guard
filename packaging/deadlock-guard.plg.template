@@ -12,8 +12,8 @@
   max="7.3.999"
 >
   <CHANGES><![CDATA[
-### @VERSION@ — initial beta
-Native exclusive-group handoffs, VM safety gate, conservative recovery and Settings UI. Host validation required.
+### @VERSION@
+@CHANGES@
   ]]></CHANGES>
 
   <!-- Check the host before downloading or installing anything. -->

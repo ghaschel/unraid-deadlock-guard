@@ -29,3 +29,29 @@ test('API health requires a live adapter with matching installed code', function
     );
     eq($integration->health()['ready'], false);
 });
+
+test(
+    'API health accepts build metadata and newer compatible versions without losing diagnostics',
+    function () {
+        $dir = tempdir();
+        $store = new Store($dir . '/run', $dir . '/config');
+        $module = $dir . '/module';
+        mkdir($module);
+        file_put_contents($module . '/index.mjs', 'module');
+        $integration = new ApiIntegration($store, $module);
+        $cases = json_decode(file_get_contents(__DIR__ . '/../fixtures/api-versions.json'), true);
+        foreach ($cases as $case) {
+            Store::atomic($store->runDir . '/api-integration.json', [
+                'pid' => getmypid(),
+                'processIdentity' => ProcessIdentity::of(getmypid()),
+                'hash' => $integration->hash(),
+                'apiVersion' => $case['version'],
+            ]);
+            $health = $integration->health();
+            eq($health['ready'], $case['compatible']);
+            if (!$case['compatible'] && is_string($case['version']) && $case['version'] !== '') {
+                ok(str_contains($health['message'], $case['version']));
+            }
+        }
+    },
+);

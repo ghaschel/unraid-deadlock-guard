@@ -6,8 +6,6 @@ use RuntimeException;
 
 final class ApiIntegration
 {
-    public const SUPPORTED_VERSION = '4.37.4';
-
     private string $module;
     public function __construct(private Store $store, ?string $module = null)
     {
@@ -62,8 +60,8 @@ final class ApiIntegration
                     'message' => 'API integration unavailable: ' . $record['error'],
                 ];
             }
-            if (($record['apiVersion'] ?? '') !== self::SUPPORTED_VERSION) {
-                return ['ready' => false, 'message' => 'This beta supports Unraid API 4.37.4.'];
+            if ($versionError = ApiVersion::error($record['apiVersion'] ?? null)) {
+                return ['ready' => false, 'message' => $versionError];
             }
             if (($record['hash'] ?? '') !== $this->hash()) {
                 return [
@@ -71,7 +69,13 @@ final class ApiIntegration
                     'message' => 'API integration needs to reload. Restart the Unraid API service.',
                 ];
             }
-            return ['ready' => true, 'message' => 'API handoffs installed and activated'];
+            return [
+                'ready' => true,
+                'message' =>
+                    'API handoffs installed and activated (Unraid API ' .
+                    $record['apiVersion'] .
+                    ')',
+            ];
         } catch (\Throwable $error) {
             return [
                 'ready' => false,

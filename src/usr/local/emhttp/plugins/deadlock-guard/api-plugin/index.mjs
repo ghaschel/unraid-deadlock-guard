@@ -3,14 +3,8 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
 import { installAdapter } from './adapter.mjs';
-import {
-  codeHash,
-  createRpc,
-  publishStatus,
-  clearStatus,
-  installMarker,
-  supportedApiVersion,
-} from './runtime.mjs';
+import { apiVersionError } from './compatibility.mjs';
+import { codeHash, createRpc, publishStatus, clearStatus, installMarker } from './runtime.mjs';
 
 const require = createRequire(import.meta.url);
 const { Module, Logger } = require('@nestjs/common');
@@ -35,10 +29,12 @@ class ApiRuntime {
   }
 
   async onApplicationBootstrap() {
+    let apiVersion;
     try {
       const metadata = JSON.parse(fs.readFileSync('/usr/local/unraid-api/package.json', 'utf8'));
-      if (metadata.version !== supportedApiVersion)
-        throw Error('This beta requires Unraid API 4.37.4');
+      apiVersion = metadata.version;
+      const versionError = apiVersionError(apiVersion);
+      if (versionError) throw Error(versionError);
       const schemaHost = this.provider('GraphQLSchemaHost');
       const authorization = this.provider('AuthZService');
       if (typeof authorization.enforce !== 'function')
@@ -56,7 +52,7 @@ class ApiRuntime {
       // Leave the API itself available; surface unavailable protection in Settings.
       this.logger.error(error.message);
       try {
-        publishStatus({ hash: loadedHash, error: error.message });
+        publishStatus({ hash: loadedHash, apiVersion, error: error.message });
       } catch (statusError) {
         this.logger.error(statusError.message);
       }

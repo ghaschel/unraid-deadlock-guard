@@ -1,0 +1,86 @@
+[
+  {
+    "version": "4.36.0",
+    "compatible": true
+  },
+  {
+    "version": "4.36.0+build.01",
+    "compatible": true
+  },
+  {
+    "version": "4.37.4",
+    "compatible": true
+  },
+  {
+    "version": "4.37.4+ad268301",
+    "compatible": true
+  },
+  {
+    "version": "4.38.0",
+    "compatible": true
+  },
+  {
+    "version": "4.100.0",
+    "compatible": true
+  },
+  {
+    "version": "5.0.0",
+    "compatible": true
+  },
+  {
+    "version": "4.37.0-rc.1",
+    "compatible": true
+  },
+  {
+    "version": "4.35.99",
+    "compatible": false
+  },
+  {
+    "version": "4.9.99",
+    "compatible": false
+  },
+  {
+    "version": "3.99.99",
+    "compatible": false
+  },
+  {
+    "version": "4.36.0-rc.1",
+    "compatible": false
+  },
+  {
+    "version": "04.37.4",
+    "compatible": false
+  },
+  {
+    "version": "4.37",
+    "compatible": false
+  },
+  {
+    "version": "4.37.4+bad!",
+    "compatible": false
+  },
+  {
+    "version": "4.37.4-01",
+    "compatible": false
+  },
+  {
+    "version": "4.37.4\n",
+    "compatible": false
+  },
+  {
+    "version": "",
+    "compatible": false
+  },
+  {
+    "version": null,
+    "compatible": false
+  },
+  {
+    "version": 4374,
+    "compatible": false
+  },
+  {
+    "version": {},
+    "compatible": false
+  }
+]

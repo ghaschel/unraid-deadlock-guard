@@ -4,3 +4,5 @@ Thumbs.db
 /node_modules/
 __pycache__/
 /tests/api/node_modules/
+/.superpowers/
+/.release/

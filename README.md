@@ -22,7 +22,7 @@ This plugin **does not provide system-wide exclusivity**. Direct Docker CLI/Engi
 
 An independently named libvirt QEMU hook rejects grouped VM starts without a short-lived, single-use coordinator authorization. This includes terminal commands, scripts and VM autostart. Disable autostart for grouped VMs. Managed-save restore, migration and external attach are also rejected for grouped VMs in this beta; shut the VM down normally and use Start. Resume from pause or guest suspend is supported through native controls.
 
-The API adapter targets **Unraid API 4.37.4** (source verified against `ad268301`). Once Settings shows **API handoffs installed and activated**, clients such as nzb360 use the same coordinator for Docker start/restart/unpause and VM start/resume/reboot. The caller needs update permission for every VM/container resource type affected by the handoff. Ordinary stops stay native and start nothing else.
+The API adapter requires **Unraid API 4.36.0 or newer** with compatible interfaces, including versions such as `4.37.4+ad268301`. Once Settings shows **API handoffs installed and activated**, clients such as nzb360 use the same coordinator for Docker start/restart/unpause and VM start/resume/reboot. The caller needs update permission for every VM/container resource type affected by the handoff. Ordinary stops stay native and start nothing else.
 
 Grouped VM API reboots use a guest reboot, including when API handoffs are unchecked. The native API's shutdown/create sequence cannot pass the VM gate without coordination. Grouped VM **Reset** is rejected before it destroys the VM; use Reboot or Stop then Start. Ungrouped API actions retain their native behavior. Unchecked grouped VM starts get a single-use authorization without stopping conflicts.
 
@@ -37,7 +37,7 @@ Development tools are PHP 8.3 (or Docker for the tests), Node.js and Python 3. T
 ```sh
 npm ci --prefix tests/api --ignore-scripts --legacy-peer-deps
 ./scripts/test.sh
-python3 scripts/build.py --update-manifest
+python3 scripts/build.py
 ```
 
 The repository separates the installed files from the build tooling:

@@ -17,8 +17,8 @@ async function fixture({ managed = true, failed = false, removed = false, rpcErr
   const schema = buildSchema(
     [
       'scalar PrefixedID',
-      'type Container { id: String! }',
-      'type DockerMutations { start(id: PrefixedID!): Container! restart(id: PrefixedID!): Container! unpause(id: PrefixedID!): Container! stop(id: PrefixedID!): Container! }',
+      'type DockerContainer { id: String! }',
+      'type DockerMutations { start(id: PrefixedID!): DockerContainer! restart(id: PrefixedID!): DockerContainer! unpause(id: PrefixedID!): DockerContainer! stop(id: PrefixedID!): DockerContainer! }',
       'type VmMutations { start(id: PrefixedID!): Boolean! resume(id: PrefixedID!): Boolean! reboot(id: PrefixedID!): Boolean! reset(id: PrefixedID!): Boolean! stop(id: PrefixedID!): Boolean! }',
       'type Mutation { docker: DockerMutations! vm: VmMutations! }',
       'type Query { healthy: Boolean! }',

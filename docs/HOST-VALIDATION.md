@@ -4,7 +4,7 @@ Record exact Unraid/PHP/Docker/libvirt versions, package SHA-256, browser versio
 
 ## Installation
 
-1. Build twice with `python3 scripts/build.py --update-manifest`; verify matching hashes. Copy the `.plg`, `.txz` and SHA256SUMS to the test host and run `sha256sum -c SHA256SUMS` there.
+1. Build twice with `python3 scripts/build.py`; verify matching hashes. Copy the `.plg`, `.txz` and SHA256SUMS to the test host and run `sha256sum -c SHA256SUMS` there.
 2. Before public release, copy the `.txz` into `/boot/config/plugins/deadlock-guard/packages/` with its exact filename from the manifest; install the local manifest with `plugin install /path/to/deadlock-guard.plg`. Always use the full absolute manifest path: Unraid's PHP startup changes the working directory to `/usr/local/emhttp`, so `plugin install deadlock-guard.plg` can fail even after changing into the correct directory. The native installer reuses a valid cached package. Test again using the public release URLs after publication.
 3. Verify Settings → Deadlock Guard, permissions, plugin list, absence of a plugin cron entry and independent hook. Existing hooks must be byte-identical. Confirm the installer instructs the user to reboot after first installation and Settings requests a reboot if activation is pending. Shut down test workloads gracefully and use Unraid's normal reboot control. After the array and VM service start, reload the WebGUI and verify activation is ready. Lifecycle events check integration automatically; the Troubleshooting buttons are optional. The plugin must not reboot the host or restart any service automatically. Do not toggle the VM service for activation; a retained `libvirt.img` loop attachment can prevent it from starting again. If an upgrade requires activation, repeat this planned reboot procedure.
 4. Reload all open WebGUI tabs. Confirm no stock PHP/JS files changed. Add groups, save, reload, and inspect the flash JSON. Test upgrade and uninstall with jobs idle and again with an active/quarantined job. Configuration must survive; busy operations must refuse.
@@ -92,7 +92,7 @@ A handoff reaching the shutdown stage and reporting a graceful timeout is not ev
 
 ## API and source controls — release gate
 
-Use Unraid API **4.37.4+ad268301** and disposable groups. These checks are still required on Tower; local Nest/GraphQL fixtures do not certify host compatibility.
+Use Unraid API **4.37.4+ad268301** and disposable groups for the reported regression. Confirm the installed module activates, the full version appears in Settings, and a previous version-rejection error clears after successful registration. Repeat the API checks on **4.36.0** when available; eligibility begins at 4.36.0 and requires matching interfaces. These checks are still required on Tower; local Nest/GraphQL fixtures do not certify host compatibility.
 
 - Upgrade the local test package, reload Settings, and confirm saved groups remain. Both source checkboxes default on for old groups and new groups. Neither selected must fail in the browser and server, preserving the last saved config.
 - Run `unraid-api restart` to load the new adapter. Verify **API handoffs installed and activated** is green. Stop the API or load mismatched adapter files in a disposable test environment and confirm the status becomes red. A loaded stale adapter must reject protected requests without falling through to native starts.

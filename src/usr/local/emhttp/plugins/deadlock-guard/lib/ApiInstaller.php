@@ -52,8 +52,8 @@ final class ApiInstaller
                 throw new RuntimeException('Unraid API is not installed');
             }
             $metadata = Store::read($base . '/package.json');
-            if (($metadata['version'] ?? '') !== ApiIntegration::SUPPORTED_VERSION) {
-                throw new RuntimeException('This beta requires Unraid API 4.37.4');
+            if ($versionError = ApiVersion::error($metadata['version'] ?? null)) {
+                throw new RuntimeException($versionError);
             }
 
             $installed = $base . '/node_modules/' . self::NAME;

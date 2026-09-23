@@ -26,7 +26,7 @@ Icon="shield"
     <p>GPU/PCI driver binding must be configured separately. If a handoff fails, VMs and containers already stopped remain stopped.</p>
     <p><strong>Check Integration</strong> checks VM and API protection and restores the VM hook if needed. It does not restart any service.</p>
     <p>If API integration needs activation, run <code>unraid-api restart</code> in the Unraid terminal, then check integration again. This restarts the API service; running VMs and containers keep running. API requests are briefly unavailable.</p>
-    <p>If API setup failed, retry it with <code>/usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle api-install</code> before restarting the API. This beta targets Unraid API 4.37.4.</p>
+    <p>If API setup failed, retry it with <code>/usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle api-install</code> before restarting the API. API handoffs require Unraid API 4.36.0 or newer with compatible interfaces. The status above shows the detected version when available.</p>
     <p>Until API integration is active, API starts do not trigger handoffs. Direct Docker commands and automatic starts also bypass handoffs. Direct starts of grouped VMs remain blocked by the VM safety gate.</p>
     <p><strong>Check pending jobs</strong> reviews interrupted handoffs and retries jobs waiting to start. Jobs that may still have an operation in progress remain blocked.</p>
     <div class="dg-actions">
