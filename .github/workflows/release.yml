@@ -22,10 +22,10 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       DRY_RUN: ${{ inputs.dry_run }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Prepare or restore the frozen candidate
@@ -33,7 +33,7 @@ jobs:
         run: python3 scripts/release.py prepare
       - name: Save the candidate for retries
         if: steps.prepare.outputs.new_candidate == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-candidate-${{ github.run_id }}
           path: |
@@ -44,7 +44,7 @@ jobs:
           retention-days: 90
       - uses: ./.github/actions/validate
       - name: Keep validated release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
