@@ -1,14 +1,17 @@
 Menu="OtherSettings"
 Title="Deadlock Guard"
-Icon="shield"
+Icon="icon-deadlock-guard"
 ---
+<?php
+$dgVersion = trim((string) @file_get_contents("$docroot/plugins/deadlock-guard/VERSION"));
+?>
 <div id="deadlock-guard" class="dg-settings">
-  <h2>Deadlock Guard <small>Beta · Unraid 7.3.x</small></h2>
+  <h2>Deadlock Guard <small>- Beta - <?=htmlspecialchars($dgVersion ?: 'Version unavailable', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')?></small></h2>
   <p>Add VMs and containers that use the same hardware to a group. When you click Start in Unraid, Deadlock Guard stops the others in that group first to prevent hardware passthrough deadlocks.</p>
   <p id="dg-health" class="dg-health" role="status">Loading integration status…</p>
   <p id="dg-api-health" class="dg-health" role="status">Loading API integration status…</p>
   <div id="dg-service-errors" role="status" hidden></div>
-  <p id="dg-message" role="status" aria-live="polite"></p>
+  <p id="dg-message" role="status" aria-live="polite">Loading configuration…</p>
   <button type="button" id="dg-retry" hidden onclick="location.reload()">Retry</button>
   <div id="dg-groups"></div>
   <p>Save groups to apply your changes to future starts. Saving does not start or stop VMs or containers. Unchecked sources allow starts without that group’s handoffs. Other enabled groups still apply.</p>
@@ -22,11 +25,21 @@ Icon="shield"
   <div id="dg-history"></div>
   <details id="dg-troubleshooting">
     <summary>Troubleshooting</summary>
+    <p><label><input type="checkbox" id="dg-debug" disabled> Enable debug logging</label></p>
+    <p>Enable this before reproducing an issue, then download the logs. Logs are kept in <code>/var/run/deadlock-guard/debug.log</code> and <code>debug-api.log</code>, with one rotated copy each (2 MiB total). They clear on reboot; the debug setting is saved. Logs include VM/container names and IDs, so review them before sharing.</p>
+    <p>For browser problems, reload the affected Unraid tab after enabling debug logging, open Developer Tools → Console, and filter for <code>[Deadlock Guard]</code>.</p>
+    <p id="dg-debug-status" role="status">Loading debug setting…</p>
+    <button type="button" id="dg-debug-download">Download debug logs</button>
+    <div id="dg-action-errors-section" hidden>
+      <h4>Action errors</h4>
+      <div id="dg-action-errors"></div>
+    </div>
+    <pre id="dg-api-details" aria-label="API integration error details" hidden></pre>
     <p>WebUI covers the VMs, Docker and Dashboard controls. API covers supported Unraid API clients, including nzb360, once API integration is active. Stopping a VM or container never starts another.</p>
     <p>GPU/PCI driver binding must be configured separately. If a handoff fails, VMs and containers already stopped remain stopped.</p>
     <p><strong>Check Integration</strong> checks VM and API protection and restores the VM hook if needed. It does not restart any service.</p>
-    <p>If API integration needs activation, run <code>unraid-api restart</code> in the Unraid terminal, then check integration again. This restarts the API service; running VMs and containers keep running. API requests are briefly unavailable.</p>
-    <p>If API setup failed, retry it with <code>/usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle api-install</code> before restarting the API. This beta targets Unraid API 4.37.4.</p>
+    <p>Installation and updates automatically restart Unraid API after successful setup. This restarts only the API service; running VMs and containers keep running. API requests are briefly unavailable.</p>
+    <p>If API setup or restart failed, run <code>/usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle api-install</code> in the Unraid terminal to retry both. A successful retry clears the saved error; then reload Settings. API handoffs require Unraid API 4.36.0 or newer with compatible interfaces. The status above shows the detected version when available.</p>
     <p>Until API integration is active, API starts do not trigger handoffs. Direct Docker commands and automatic starts also bypass handoffs. Direct starts of grouped VMs remain blocked by the VM safety gate.</p>
     <p><strong>Check pending jobs</strong> reviews interrupted handoffs and retries jobs waiting to start. Jobs that may still have an operation in progress remain blocked.</p>
     <div class="dg-actions">
@@ -46,7 +59,10 @@ Icon="shield"
       health.textContent = 'Unable to load integration status.';
       health.dataset.kind = 'error';
     }
-    document.getElementById('dg-message').textContent = detail;
+    const message = document.getElementById('dg-message');
+    message.textContent = detail;
+    message.dataset.kind = 'error';
+    message.hidden = false;
     document.getElementById('dg-retry').hidden = false;
   };
   state.timer = setTimeout(

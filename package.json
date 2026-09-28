@@ -6,7 +6,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "./scripts/test.sh",
-    "test:browser": "node tests/js/browser.cjs && node tests/js/settings-browser.cjs"
+    "test:browser": "node tests/js/browser.cjs && node tests/js/settings-browser.cjs",
+    "build:local": "python3 scripts/local_build.py",
+    "deploy:local": "python3 scripts/deploy.py"
   },
   "devDependencies": {
     "@prettier/plugin-php": "0.24.0",

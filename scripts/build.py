@@ -7,6 +7,7 @@ commands live in packaging/deadlock-guard.plg.template.
 
 import argparse
 import gzip
+import datetime as dt
 import hashlib
 import io
 import lzma
@@ -14,6 +15,7 @@ import re
 import tarfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Optional
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,11 +25,15 @@ PLUGIN_DIR = "usr/local/emhttp/plugins/deadlock-guard"
 MANIFEST_NAME = "deadlock-guard.plg"
 
 
-def read_version() -> str:
-    version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    if not re.fullmatch(r"\d{4}\.\d{2}\.\d{2}(?:[a-z]\d+)?", version):
+def validate_version(version: str) -> str:
+    if not re.fullmatch(r"[0-9]{4}\.[0-9]{2}\.[0-9]{2}(?:[a-z]+[0-9]*)?", version):
         raise ValueError(f"Invalid release version: {version!r}")
+    dt.datetime.strptime(version[:10], "%Y.%m.%d")
     return version
+
+
+def read_version() -> str:
+    return validate_version((ROOT / "VERSION").read_text(encoding="utf-8").strip())
 
 
 def collect_package_files(version: str) -> dict[str, tuple[bytes, int]]:
@@ -49,9 +55,7 @@ def collect_package_files(version: str) -> dict[str, tuple[bytes, int]]:
         if name.startswith(f"{PLUGIN_DIR}/api-plugin/")
     }
     module_files["package/LICENSE"] = ((ROOT / "LICENSE").read_bytes(), 0o644)
-    files[f"{PLUGIN_DIR}/api-plugin.tgz"] = (
-        gzip_bytes(tar_bytes(module_files)), 0o644
-    )
+    files[f"{PLUGIN_DIR}/api-plugin.tgz"] = (gzip_bytes(tar_bytes(module_files)), 0o644)
     return files
 
 
@@ -98,11 +102,26 @@ def write_package(path: Path, files: dict[str, tuple[bytes, int]]) -> None:
     path.write_bytes(compressed)
 
 
+def release_notes(version: str) -> str:
+    changelog = ROOT / "CHANGELOG.md"
+    if changelog.exists():
+        heading = re.search(
+            r"^## " + re.escape(version) + r"$", changelog.read_text(), re.M
+        )
+        if heading:
+            remaining = changelog.read_text()[heading.end() :]
+            return re.split(
+                r"^## [0-9]{4}\.[0-9]{2}\.[0-9]{2}", remaining, maxsplit=1, flags=re.M
+            )[0].strip()
+    return "Development build. See GitHub Releases for published changes."
+
+
 def write_manifest(path: Path, package: Path, version: str) -> None:
     """Fill the release values without escaping or rewriting the Bash commands."""
     payload = package.read_bytes()
     values = {
         "VERSION": version,
+        "CHANGES": release_notes(version).replace("]]>", "]]]]><![CDATA[>"),
         "PACKAGE_NAME": package.name,
         "SHA256": hashlib.sha256(payload).hexdigest(),
         # Unraid's plugin manager also consumes the legacy MD5 field.
@@ -110,11 +129,11 @@ def write_manifest(path: Path, package: Path, version: str) -> None:
     }
 
     manifest = MANIFEST_TEMPLATE.read_text(encoding="utf-8")
-    for name, value in values.items():
-        manifest = manifest.replace(f"@{name}@", value)
-
-    if re.search(r"@[A-Z_0-9]+@", manifest):
+    placeholders = set(re.findall(r"@([A-Z_0-9]+)@", manifest))
+    if placeholders - values.keys():
         raise ValueError("Unresolved release value in the plugin manifest")
+    # One pass prevents PR text containing @TOKENS@ from becoming template input.
+    manifest = re.sub(r"@([A-Z_0-9]+)@", lambda match: values[match[1]], manifest)
     ET.fromstring(manifest)
     path.write_text(manifest, encoding="utf-8")
 
@@ -127,8 +146,8 @@ def write_checksums(output: Path, artifacts: list[Path]) -> None:
     (output / "SHA256SUMS").write_text("".join(lines), encoding="utf-8")
 
 
-def build(output: Path) -> None:
-    version = read_version()
+def build(output: Path, version: Optional[str] = None) -> None:
+    version = read_version() if version is None else validate_version(version)
     output.mkdir(parents=True, exist_ok=True)
 
     package = output / f"deadlock-guard-{version}-noarch-1.txz"

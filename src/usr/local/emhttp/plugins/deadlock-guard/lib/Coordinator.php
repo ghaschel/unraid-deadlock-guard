@@ -26,12 +26,12 @@ final class Coordinator
             $this->phase('Validating workloads');
             $this->validateTargets();
             foreach ($this->job['plan']['conflicts'] as $member) {
-                $this->stop($member);
+                $this->stop($member, conflict: true);
             }
             foreach ($this->job['plan']['requests'] as $request) {
                 $this->executeTarget($request, $gate);
             }
-            $this->phase('Handoff complete');
+            $this->phase($this->job['handoff'] ? 'Handoff complete' : 'Action complete');
             $this->update(['status' => 'succeeded']);
         } catch (Throwable $error) {
             $this->recordFailure($error);
@@ -52,6 +52,7 @@ final class Coordinator
                 throw new RuntimeException('Job already claimed');
             }
             $job['status'] = 'running';
+            $job['handoff'] = false;
             $job['pid'] = getmypid();
             $job['processIdentity'] = ProcessIdentity::of(getmypid());
             $this->store->putJob($job);
@@ -136,7 +137,7 @@ final class Coordinator
         $this->confirmRunning($member);
     }
 
-    private function stop(array $member): void
+    private function stop(array $member, bool $conflict = false): void
     {
         $state = $this->inspect($member);
         if ($state['status'] === 'stopped') {
@@ -148,19 +149,26 @@ final class Coordinator
             );
         }
 
+        if ($conflict) {
+            // Restarting the requested container itself does not constitute a handoff.
+            $this->update(['handoff' => true]);
+        }
         $policy = Config::policy($this->job['config'], $this->job['plan'], $member);
         // An active VM needs a NEW release event, including its first observed release.
         $releaseAfter =
             $member['type'] === 'vm' ? max(0.000001, (float) ($state['release'] ?? 0)) : 0.0;
-        $this->phase('Stopping ' . $state['name']);
-        $this->command($member, 'stop', fn() => $this->platform->stop($member));
+        $this->phase('Stopping ' . $state['name'], $this->waitingMembers($member));
+        $this->command($member, 'stop', fn() => $this->platform->stop($member, $policy['timeout']));
         $this->phase('Waiting for resources to be released', $this->waitingMembers($member));
-        if ($this->waitStopped($member, $policy['timeout'], $releaseAfter)) {
+        // Docker already waited through its stop timeout; only confirmation remains.
+        $confirmationTimeout =
+            $member['type'] === 'docker' ? self::RESULT_TIMEOUT : $policy['timeout'];
+        if ($this->waitStopped($member, $confirmationTimeout, $releaseAfter)) {
             return;
         }
-        if ($policy['force']) {
+        if ($member['type'] === 'vm' && $policy['force']) {
             $this->phase('Force-stopping ' . $state['name']);
-            $this->command($member, 'force-stop', fn() => $this->platform->forceStop($member));
+            $this->command($member, 'force-stop', fn() => $this->platform->forceStopVm($member));
             if ($this->waitStopped($member, self::RESULT_TIMEOUT, $releaseAfter)) {
                 return;
             }
@@ -223,8 +231,16 @@ final class Coordinator
         $this->update([
             'inFlight' => ['workload' => $member, 'action' => $action, 'at' => microtime(true)],
         ]);
+        $context = [
+            'jobId' => $this->job['id'],
+            'type' => $member['type'],
+            'workloadId' => $member['id'],
+            'action' => $action,
+        ];
+        $this->store->debug->record('command.started', $context);
         try {
             $operation();
+            $this->store->debug->record('command.completed', $context);
         } catch (UncertainOperation $error) {
             // Retain intent: an accepted command might still complete after the worker fails.
             throw $error;
@@ -237,6 +253,13 @@ final class Coordinator
 
     private function recordFailure(Throwable $error): void
     {
+        $this->store->debug->record('job.failed', [
+            'jobId' => $this->job['id'],
+            'phase' => $this->job['phase'],
+            'errorType' => get_class($error),
+            'reason' =>
+                $this->job['inFlight'] !== null ? 'operation_uncertain' : 'operation_failed',
+        ]);
         $uncertain = $error instanceof UncertainOperation || $this->job['inFlight'] !== null;
         foreach ($this->members() as $member) {
             try {
@@ -251,7 +274,13 @@ final class Coordinator
                 $this->update(['states' => $states]);
             }
         }
-        $this->phase($uncertain ? 'Operation uncertain — recovery required' : 'Handoff failed');
+        $this->phase(
+            $uncertain
+                ? 'Operation uncertain — recovery required'
+                : ($this->job['handoff']
+                    ? 'Handoff failed'
+                    : 'Action failed'),
+        );
         $this->update([
             'status' => $uncertain ? 'quarantined' : 'failed',
             'error' => $error->getMessage(),
@@ -262,6 +291,15 @@ final class Coordinator
     {
         $state = $this->platform->inspect($member);
         $states = $this->job['states'];
+        if (($states[Config::key($member)] ?? null) !== $state) {
+            $this->store->debug->record('workload.state', [
+                'jobId' => $this->job['id'],
+                'type' => $member['type'],
+                'workloadId' => $member['id'],
+                'runtimeId' => $state['runtimeId'] ?? null,
+                'state' => $state['status'],
+            ]);
+        }
         $states[Config::key($member)] = $state;
         $this->update(['states' => $states]);
         return $state;
@@ -269,14 +307,21 @@ final class Coordinator
 
     private function phase(string $message, array $workloads = []): void
     {
+        $this->store->debug->record('job.phase', [
+            'jobId' => $this->job['id'],
+            'phase' => $message,
+            'handoff' => $this->job['handoff'],
+        ]);
         $history = $this->job['history'];
-        $history[] = ['at' => microtime(true), 'message' => $message];
+        if ($this->job['handoff']) {
+            $history[] = ['at' => microtime(true), 'message' => $message];
+        }
         $this->update([
             'phase' => $message,
             'progress' => ['workloads' => $workloads],
             'history' => array_slice($history, -self::HISTORY_LIMIT),
         ]);
-        if (function_exists('syslog')) {
+        if ($this->job['handoff'] && function_exists('syslog')) {
             syslog(LOG_INFO, 'Deadlock Guard ' . $this->job['id'] . ': ' . $message);
         }
     }

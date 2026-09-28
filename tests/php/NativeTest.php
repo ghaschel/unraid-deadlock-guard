@@ -7,6 +7,7 @@ use DeadlockGuard\Config;
 class FixtureRunner implements CommandRunner
 {
     public array $calls = [];
+    public array $deadlines = [];
     public string $signal = 'SIGTERM';
     public string $id;
     public bool $running = true;
@@ -22,6 +23,7 @@ class FixtureRunner implements CommandRunner
         bool $mutation = false,
     ): string {
         $this->calls[] = $argv;
+        $this->deadlines[] = $timeout;
         if ($argv[0] === 'docker' && $argv[1] === 'inspect') {
             return json_encode([
                 [
@@ -42,7 +44,7 @@ class FixtureRunner implements CommandRunner
                 ],
             ]);
         }
-        if ($argv[0] === 'docker' && $argv[1] === 'kill') {
+        if ($argv[0] === 'docker' && in_array($argv[1], ['kill', 'stop'], true)) {
             return $this->id;
         }
         throw new RuntimeException('Unexpected command ' . json_encode($argv));
@@ -63,30 +65,19 @@ test('process runner preserves literal arguments and reports errors and deadline
     );
 });
 
-test(
-    'native graceful Docker stop sends configured signal without implicit escalation',
-    function () {
-        $store = new Store(tempdir() . '/run', tempdir() . '/config.json');
-        $runner = new FixtureRunner();
-        $platform = new NativePlatform($store, $runner);
-        $member = member('docker', 'FileFlows');
-        eq($platform->inspect($member)['status'], 'running');
-        $platform->stop($member);
-        eq(end($runner->calls), [
-            'docker',
-            'kill',
-            '--signal',
-            'SIGTERM',
-            '--',
-            str_repeat('a', 64),
-        ]);
-        $runner->signal = 'SIGKILL';
-        $platform->stop($member);
-        eq(end($runner->calls)[3], 'SIGTERM');
-        $platform->forceStop($member);
-        eq(end($runner->calls)[3], 'SIGKILL');
-    },
-);
+test('native Docker stop delegates timeout and stop signal handling to Docker', function () {
+    $store = new Store(tempdir() . '/run', tempdir() . '/config.json');
+    $runner = new FixtureRunner();
+    $platform = new NativePlatform($store, $runner);
+    $member = member('docker', 'FileFlows');
+    foreach (['', 'SIGINT', 'SIGKILL'] as $signal) {
+        $runner->signal = $signal;
+        $platform->stop($member, 60);
+        eq(end($runner->calls), ['docker', 'stop', '--timeout', '60', '--', str_repeat('a', 64)]);
+        ok(end($runner->deadlines) > 60, 'Client must allow Docker its full shutdown timeout');
+        ok(end($runner->deadlines) <= 120, 'Client must have a bounded completion deadline');
+    }
+});
 
 test('container recreation during a job is rejected rather than switching identity', function () {
     $store = new Store(tempdir() . '/run', tempdir() . '/config.json');
@@ -153,3 +144,71 @@ test('VM console metadata includes the domain name for native console titles', f
     eq($console['port'], 5901);
     eq($console['websocket'], 5701);
 });
+
+test('process failures retain the final error after lengthy warnings', function () {
+    $runner = new Runner();
+    $source =
+        'fwrite(STDERR, str_repeat("npm warn peer conflict\n", 200)); fwrite(STDERR, "npm error code ENOTCACHED\nnpm error Missing cached dependency\n"); exit(1);';
+    raises(fn() => $runner->run([PHP_BINARY, '-r', $source]), 'npm error code ENOTCACHED');
+    eq(
+        $runner->run([PHP_BINARY, '-r', 'fwrite(STDERR,"npm warn harmless\n"); echo "success";']),
+        'success',
+    );
+});
+
+test(
+    'lost native Docker stop response retains reservations and never starts the target',
+    function () {
+        [$store, $unused, $job, $conflict, $target] = scenario('docker', 'docker');
+        $runner = new class ($store, $job['id']) implements CommandRunner {
+            public array $mutations = [];
+            public function __construct(private Store $store, private string $jobId) {}
+            public function run(
+                array $argv,
+                float $timeout = 10,
+                ?string $input = null,
+                bool $mutation = false,
+            ): string {
+                if ($argv[0] === 'docker' && $argv[1] === 'inspect') {
+                    $name = end($argv);
+                    $running = $name === 'a';
+                    return json_encode([
+                        [
+                            'Id' => str_repeat($name, 64),
+                            'Name' => '/' . $name,
+                            'State' => [
+                                'Running' => $running,
+                                'Restarting' => false,
+                                'Paused' => false,
+                                'Status' => $running ? 'running' : 'exited',
+                                'Pid' => $running ? 123 : 0,
+                            ],
+                        ],
+                    ]);
+                }
+                $this->mutations[] = $argv[1];
+                eq($this->store->job($this->jobId)['inFlight']['action'], 'stop');
+                // Model Runner's outcome classification when a mutating client loses its response.
+                if ($mutation) {
+                    throw new DeadlockGuard\UncertainOperation('Docker stop response lost');
+                }
+                throw new RuntimeException('Docker stop response lost');
+            }
+        };
+        (new DeadlockGuard\Coordinator($store, new NativePlatform($store, $runner)))->run(
+            $job['id'],
+        );
+        $result = $store->job($job['id']);
+        eq($result['status'], 'quarantined');
+        eq($result['inFlight']['action'], 'stop');
+        eq($result['states'][Config::key($target)]['status'], 'stopped');
+        eq($runner->mutations, ['stop']);
+        raises(
+            fn() => (new DeadlockGuard\Jobs($store))->submit(
+                [['workload' => $conflict, 'action' => 'start']],
+                'opposing-after-lost-stop',
+            ),
+            'busy',
+        );
+    },
+);

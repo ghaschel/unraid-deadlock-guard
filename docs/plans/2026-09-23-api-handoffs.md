@@ -1,5 +1,7 @@
 # API and WebUI group controls
 
+Update: the user subsequently requested automatic API restart during plugin installation and updates. The final installer now runs `unraid-api restart` after successful setup; the original no-restart requirement below is superseded for that path.
+
 Approved behavior: both source checkboxes default on, at least one is required to save, and unchecked sources permit starts without that group's handoff rules. Start requests still obey other overlapping groups enabled for their source. Ordinary stops start nothing else. Target Unraid 7.3.x and the user's API 4.37.4+ad268301 (official commit ad268301ca78da1fa47fd3bb87e60fcedc458c5b).
 
 ## Implementation sequence

@@ -28,7 +28,7 @@ final class WorkerSupervisor
         if (!$claimed) {
             return;
         }
-        $failure = 'Worker exited before starting the handoff.';
+        $failure = 'Worker exited before starting the action.';
         try {
             // Block on this child only. There is no idle daemon, polling loop or cron.
             $argv = [
@@ -49,9 +49,11 @@ final class WorkerSupervisor
                 $pipes,
             );
             if (!is_resource($process)) {
-                throw new \RuntimeException('Could not launch the handoff worker');
+                throw new \RuntimeException('Could not launch the action worker');
             }
+            $this->store->debug->record('worker.started', ['jobId' => $id]);
             $exit = proc_close($process);
+            $this->store->debug->record('worker.exited', ['jobId' => $id, 'exitCode' => $exit]);
             $failure .= ' Exit status: ' . $exit . '.';
         } catch (\Throwable $error) {
             $failure = $error->getMessage();

@@ -25,12 +25,20 @@ try {
     if (!is_file(dirname($store->configFile) . '/installed.json')) {
         throw new RuntimeException('Deadlock Guard is not installed');
     }
+    $store->debug->record('api.bridge_received', [
+        'op' => in_array($request['op'] ?? '', ['route', 'status'], true)
+            ? $request['op']
+            : 'invalid',
+    ]);
     (new ApiIntegration($store))->assertReady($request['adapterHash']);
     $platform = new NativePlatform($store);
     $handoffs = new Handoffs($store, $platform, new Lifecycle($store));
     $bridge = new ApiRequests($store, $handoffs, fn() => $platform->inventory());
     echo json_encode($bridge->handle($request), JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
 } catch (Throwable $error) {
+    DeadlockGuard\DebugLog::system()->record('api.bridge_failed', [
+        'errorType' => get_class($error),
+    ]);
     echo json_encode(['error' => $error->getMessage()], JSON_INVALID_UTF8_SUBSTITUTE);
     exit(1);
 }

@@ -1,0 +1,56 @@
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Dry run (validate artifacts without publishing)
+        type: boolean
+        default: false
+        required: true
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: deadlock-guard-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare or restore the frozen candidate
+        id: prepare
+        run: python3 scripts/release.py prepare
+      - name: Save the candidate for retries
+        if: steps.prepare.outputs.new_candidate == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-${{ github.run_id }}
+          path: |
+            .release/state.json
+            .release/candidate.bundle
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+      - uses: ./.github/actions/validate
+      - name: Keep validated release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist/deadlock-guard-*.txz
+            dist/deadlock-guard.plg
+            dist/SHA256SUMS
+          if-no-files-found: error
+      - name: Publish verified assets and promote the update manifest
+        run: python3 scripts/release.py publish

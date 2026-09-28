@@ -1,7 +1,7 @@
 {
   "name": "deadlock-guard-api-tests",
   "private": true,
-  "description": "Development dependencies matching Unraid API 4.37.4",
+  "description": "Development dependencies matching the verified Unraid API 4.36.0 and 4.37.4 contracts",
   "scripts": {
     "test": "node --test *.test.cjs"
   },

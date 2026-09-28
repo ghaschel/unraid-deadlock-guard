@@ -4,21 +4,10 @@ permissions:
   contents: read
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - run: npm ci --ignore-scripts
-      - run: npm run format:check
-      - run: npm ci --prefix tests/api --ignore-scripts --legacy-peer-deps
-      - run: ./scripts/test.sh
-      - run: npx playwright install --with-deps chromium
-      - run: mkdir -p dist && node tests/js/browser.cjs
-      - run: node tests/js/settings-browser.cjs
-      - run: python3 scripts/build.py --update-manifest && git diff --exit-code -- deadlock-guard.plg
-      - run: docker run --rm -v "$PWD:/app:ro" -w /app php:8.3-cli php tests/install-smoke.php
+      - uses: ./.github/actions/validate
       - uses: actions/upload-artifact@v4
         with:
           name: deadlock-guard-beta

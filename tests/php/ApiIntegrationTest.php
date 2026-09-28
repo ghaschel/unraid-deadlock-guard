@@ -29,3 +29,80 @@ test('API health requires a live adapter with matching installed code', function
     );
     eq($integration->health()['ready'], false);
 });
+
+test(
+    'API health accepts build metadata and newer compatible versions without losing diagnostics',
+    function () {
+        $dir = tempdir();
+        $store = new Store($dir . '/run', $dir . '/config');
+        $module = $dir . '/module';
+        mkdir($module);
+        file_put_contents($module . '/index.mjs', 'module');
+        $integration = new ApiIntegration($store, $module);
+        $cases = json_decode(file_get_contents(__DIR__ . '/../fixtures/api-versions.json'), true);
+        foreach ($cases as $case) {
+            Store::atomic($store->runDir . '/api-integration.json', [
+                'pid' => getmypid(),
+                'processIdentity' => ProcessIdentity::of(getmypid()),
+                'hash' => $integration->hash(),
+                'apiVersion' => $case['version'],
+            ]);
+            $health = $integration->health();
+            eq($health['ready'], $case['compatible']);
+            if (!$case['compatible'] && is_string($case['version']) && $case['version'] !== '') {
+                ok(str_contains($health['details'], $case['version']));
+            }
+        }
+    },
+);
+
+test(
+    'API version failures show a concise requirement and retain detected-version details',
+    function () {
+        $dir = tempdir();
+        $store = new Store($dir . '/run', $dir . '/config');
+        $module = $dir . '/module';
+        mkdir($module);
+        file_put_contents($module . '/index.mjs', 'module');
+        $integration = new ApiIntegration($store, $module);
+        $error = DeadlockGuard\ApiVersion::error('4.35.9+hostbuild');
+        foreach (['installer', 'runtime', 'health'] as $stage) {
+            $record = [
+                'pid' => getmypid(),
+                'processIdentity' => ProcessIdentity::of(getmypid()),
+                'hash' => $integration->hash(),
+                'apiVersion' => '4.35.9+hostbuild',
+            ];
+            if ($stage === 'installer') {
+                Store::atomic($store->runDir . '/api-install-error.json', ['error' => $error]);
+            } else {
+                if ($stage === 'runtime') {
+                    $record['error'] = $error;
+                }
+                Store::atomic($store->runDir . '/api-integration.json', $record);
+            }
+            $health = $integration->health();
+            eq($health['ready'], false);
+            eq($health['message'], 'Unraid API 4.36.0 or newer is required. See Troubleshooting.');
+            ok(str_contains($health['details'], '4.35.9+hostbuild'));
+            @unlink($store->runDir . '/api-install-error.json');
+        }
+        Store::atomic($store->runDir . '/api-install-error.json', [
+            'error' => 'Registration failed',
+        ]);
+        eq($integration->health()['message'], 'API setup failed. See Troubleshooting.');
+    },
+);
+
+test('API setup keeps command output in diagnostics instead of the status line', function () {
+    $store = new Store(tempdir() . '/run', tempdir() . '/config');
+    $details =
+        'npm: ' .
+        str_repeat("npm warn peer dependency\n", 60) .
+        'npm error code ENOTCACHED <img src=x>';
+    Store::atomic($store->runDir . '/api-install-error.json', ['error' => $details]);
+    $health = (new ApiIntegration($store))->health();
+    eq($health['ready'], false);
+    eq($health['message'], 'API setup failed. See Troubleshooting.');
+    eq($health['details'], $details);
+});

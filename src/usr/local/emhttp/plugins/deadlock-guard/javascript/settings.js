@@ -18,6 +18,7 @@
     const message = (text, kind = 'info') => {
       byId('dg-message').textContent = text;
       byId('dg-message').dataset.kind = kind;
+      byId('dg-message').hidden = !text;
     };
     const key = (member) => member.type + ':' + member.id;
     function fieldValue(input) {
@@ -149,29 +150,38 @@
         );
         input.dataset.field = prop;
       }
-      for (const [label, prop] of [
-        ['Allow force-stop for VMs after timeout', 'forceVm'],
-        ['Allow force-stop for containers after timeout', 'forceContainer'],
-      ]) {
-        const box = field(
-          card,
-          label,
-          el('input', '', { type: 'checkbox', checked: !!group[prop] }),
-        );
-        box.dataset.field = prop;
-      }
-      card.append(el('p', 'Force-stop is optional and can lose unsaved data.'));
+      const forceVm = field(
+        card,
+        'Allow force-stop for VMs after timeout',
+        el('input', '', { type: 'checkbox', checked: !!group.forceVm }),
+      );
+      forceVm.dataset.field = 'forceVm';
+      card.append(
+        el(
+          'p',
+          'Containers use Unraid’s normal Stop behavior: Docker forcibly stops them if the container timeout expires. VM force-stop is optional. Forced stops can lose unsaved data.',
+        ),
+      );
     }
 
-    function history(jobs) {
-      const node = byId('dg-history');
+    function history(jobs, actionErrors = []) {
+      renderJobs(
+        byId('dg-history'),
+        jobs.filter((job) => job.handoff !== false),
+        'No handoffs yet.',
+      );
+      byId('dg-action-errors-section').hidden = !actionErrors.length;
+      renderJobs(byId('dg-action-errors'), actionErrors, 'No action errors.');
+    }
+
+    function renderJobs(node, jobs, emptyText) {
       const visible = jobs.slice(0, VISIBLE_HISTORY_LIMIT);
       const rows = new Map(
         Array.from(node.querySelectorAll('details')).map((row) => [row.dataset.jobId, row]),
       );
 
       if (!visible.length) {
-        if (!node.querySelector('p')) node.append(el('p', 'No handoffs yet.'));
+        if (!node.querySelector('p')) node.append(el('p', emptyText));
       } else {
         node.querySelector('p')?.remove();
       }
@@ -213,6 +223,13 @@
       const status = byId(id);
       status.textContent = health.message;
       status.dataset.kind = health.ready ? 'success' : 'error';
+      if (id === 'dg-api-health') {
+        const details = byId('dg-api-details');
+        if (details) {
+          details.textContent = health.details || '';
+          details.hidden = !health.details;
+        }
+      }
     }
 
     function serviceErrors(data) {
@@ -222,10 +239,11 @@
         node.append(el('p', (type === 'vm' ? 'VM' : 'Docker') + ': ' + error));
       node.hidden = !node.childElementCount;
     }
-    async function reload(text = 'Configuration loaded.') {
+    async function reload(text = '') {
       if (busy) return;
       busy = true;
       updateActions();
+      message('Loading configuration…');
       for (const id of ['dg-health', 'dg-api-health']) {
         byId(id).textContent = 'Loading integration status…';
         byId(id).dataset.kind = 'info';
@@ -247,7 +265,7 @@
         renderHealth(snapshot.apiHealth, 'dg-api-health');
         renderGroups();
         serviceErrors(snapshot.inventory);
-        history(snapshot.jobs);
+        history(snapshot.jobs, snapshot.actionErrors);
         message(text);
         byId('dg-retry').hidden = true;
       } catch (error) {
@@ -367,27 +385,82 @@
         },
       );
       byId('dg-check-pending').onclick = check('pending', 'Checking pending jobs…', (response) => {
-        history(response.jobs);
-        const attention = response.jobs.some((j) => j.status === 'quarantined');
+        history(response.jobs, response.actionErrors);
+        const attention = [...response.jobs, ...(response.actionErrors || [])].some(
+          (j) => j.status === 'quarantined',
+        );
         message(
           attention
-            ? 'Pending jobs checked. Some handoffs need attention; see recent handoffs.'
+            ? 'Pending jobs checked. Some actions need attention; see recent handoffs and Troubleshooting.'
             : 'Pending jobs checked.',
           attention ? 'error' : 'success',
         );
       });
     }
 
+    function bindDebugActions() {
+      const toggle = byId('dg-debug');
+      const status = byId('dg-debug-status');
+      const download = byId('dg-debug-download');
+      let saved = false;
+      const show = (text, error = false) => {
+        status.textContent = text;
+        status.dataset.kind = error ? 'error' : 'info';
+      };
+      const update = async (enabled) => {
+        toggle.disabled = true;
+        try {
+          const body = enabled === undefined ? { op: 'debug' } : { op: 'debug', enabled };
+          const result = await api.request(body, { timeout: REQUEST_TIMEOUT_MS });
+          if (typeof result.enabled !== 'boolean')
+            throw Error('Unable to load debug setting. Reload this page.');
+          saved = result.enabled;
+          window.DeadlockGuardDebug = saved;
+          show(
+            saved
+              ? 'Debug logging enabled. Reproduce the issue, then download the logs.'
+              : 'Debug logging disabled. Existing logs remain available until reboot.',
+          );
+        } catch (error) {
+          show(error.message, true);
+        } finally {
+          toggle.checked = saved;
+          toggle.disabled = false;
+        }
+      };
+      toggle.onchange = () => update(toggle.checked);
+      download.onclick = async () => {
+        download.disabled = true;
+        try {
+          const result = await api.request({ op: 'debug-log' }, { timeout: REQUEST_TIMEOUT_MS });
+          if (typeof result.log !== 'string') throw Error('Unable to download debug logs.');
+          const url = URL.createObjectURL(
+            new Blob([result.log], { type: 'text/plain;charset=utf-8' }),
+          );
+          const link = el('a', '', { href: url, download: 'deadlock-guard-debug.txt' });
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 30000);
+        } catch (error) {
+          show(error.message, true);
+        } finally {
+          download.disabled = false;
+        }
+      };
+      // Diagnostics remain available even when configuration or inventory cannot load.
+      update();
+    }
+
     function refreshHistory() {
       if (document.hidden || !snapshot || busy) return;
       api
         .request({ op: 'history' }, { timeout: REQUEST_TIMEOUT_MS })
-        .then((response) => history(response.jobs))
+        .then((response) => history(response.jobs, response.actionErrors))
         .catch((error) => message(error.message));
     }
 
     bindEditorActions();
     bindTroubleshootingActions();
+    bindDebugActions();
     clearTimeout(window.DeadlockGuardSettings?.timer);
     safe(reload)();
     setInterval(refreshHistory, HISTORY_REFRESH_MS);

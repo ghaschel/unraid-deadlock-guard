@@ -7,6 +7,8 @@ use Throwable;
 
 final class NativePlatform implements Platform
 {
+    // Docker may need time to finish cleanup after sending SIGKILL.
+    private const DOCKER_STOP_COMPLETION_TIMEOUT = 30;
     private array $bindings = [];
 
     public function __construct(
@@ -137,36 +139,39 @@ final class NativePlatform implements Platform
         ];
     }
 
-    public function stop(array $member): void
+    public function stop(array $member, int $timeout): void
     {
         if ($member['type'] === 'vm') {
-            $this->virsh('shutdown', $member, mutation: true);
+            // Use the same PHP libvirt binding as Unraid's VM Stop control.
+            $this->runner->run(
+                [
+                    '/usr/bin/php',
+                    '-d',
+                    'auto_prepend_file=',
+                    '-d',
+                    'short_open_tag=1',
+                    dirname(__DIR__) . '/scripts/vm-shutdown.php',
+                    $member['id'],
+                ],
+                mutation: true,
+            );
             return;
         }
         $container = $this->docker($member);
-        $signal = strtoupper($container['Config']['StopSignal'] ?? 'SIGTERM');
-        // A custom SIGKILL stop signal must not bypass the group's explicit force policy.
-        if ($signal === '' || in_array($signal, ['9', 'KILL', 'SIGKILL'], true)) {
-            $signal = 'SIGTERM';
-        }
+        // Match Unraid's Stop operation: Docker handles the configured signal and escalation.
         $this->runner->run(
-            ['docker', 'kill', '--signal', $signal, '--', $container['Id']],
+            ['docker', 'stop', '--timeout', (string) $timeout, '--', $container['Id']],
+            timeout: $timeout + self::DOCKER_STOP_COMPLETION_TIMEOUT,
             mutation: true,
         );
     }
 
-    public function forceStop(array $member): void
+    public function forceStopVm(array $member): void
     {
-        if ($member['type'] === 'vm') {
-            $this->virsh('destroy', $member, mutation: true, timeout: 30);
-            return;
+        if ($member['type'] !== 'vm') {
+            throw new RuntimeException('Force-stop is only available for VMs');
         }
-        $container = $this->docker($member);
-        $this->runner->run(
-            ['docker', 'kill', '--signal', 'SIGKILL', '--', $container['Id']],
-            timeout: 30,
-            mutation: true,
-        );
+        $this->virsh('destroy', $member, mutation: true, timeout: 30);
     }
 
     public function act(array $member, string $action): void

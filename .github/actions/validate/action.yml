@@ -1,0 +1,29 @@
+name: Validate candidate
+description: Test source, browser integration, and the reproducible installable package.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - run: npm ci --ignore-scripts
+      shell: bash
+    - run: npm run format:check
+      shell: bash
+    - run: npm ci --prefix tests/api --ignore-scripts --legacy-peer-deps
+      shell: bash
+    - run: ./scripts/test.sh
+      shell: bash
+    - run: npx playwright install --with-deps chromium
+      shell: bash
+    - run: mkdir -p dist && node tests/js/browser.cjs
+      shell: bash
+    - run: node tests/js/settings-browser.cjs
+      shell: bash
+    - run: python3 scripts/build.py
+      shell: bash
+    - run: docker run --rm -v "$PWD:/app:ro" -w /app php:8.3-cli php tests/install-smoke.php
+      shell: bash

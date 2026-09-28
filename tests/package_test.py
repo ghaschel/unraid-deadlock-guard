@@ -62,7 +62,7 @@ class PackageTest(unittest.TestCase):
                 )
                 with tarfile.open(fileobj=io.BytesIO(module), mode="r:gz") as npm:
                     self.assertIn("package/LICENSE", npm.getnames())
-                    for name in ("package.json", "index.mjs", "adapter.mjs", "graphql.mjs", "runtime.mjs"):
+                    for name in ("package.json", "index.mjs", "adapter.mjs", "graphql.mjs", "runtime.mjs", "debug.mjs"):
                         self.assertEqual(npm.extractfile(f"package/{name}").read(),
                                          archive.extractfile(f"{PLUGIN_DIR}/api-plugin/{name}").read())
                 self.assertNotIn("boot/config/plugins/deadlock-guard/config.json", names)

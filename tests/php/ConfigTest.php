@@ -9,7 +9,6 @@ test('configuration normalizes defaults and permits overlapping groups', functio
     eq($configuration['groups'][0]['vmTimeout'], 120);
     eq($configuration['groups'][0]['containerTimeout'], 30);
     eq($configuration['groups'][0]['forceVm'], false);
-    eq($configuration['groups'][0]['forceContainer'], false);
     eq(count(Config::groupsFor($configuration, $vm)), 2);
 });
 
@@ -98,3 +97,36 @@ test('saving a group without a source preserves the saved configuration', functi
     eq($store->revision(), $revision);
     eq($store->config(), $initial);
 });
+
+test(
+    'legacy container force flags are retired without losing saved groups or VM policy',
+    function () {
+        foreach ([false, true] as $legacyForce) {
+            $directory = tempdir();
+            $store = new DeadlockGuard\Store($directory . '/run', $directory . '/config.json');
+            $members = [member('docker', 'a'), member('docker', 'b')];
+            DeadlockGuard\Store::atomic($store->configFile, [
+                'version' => 1,
+                'groups' => [
+                    group('gpu', $members, [
+                        'forceContainer' => $legacyForce,
+                        'forceVm' => true,
+                        'containerTimeout' => 45,
+                    ]),
+                ],
+            ]);
+            $loaded = $store->config();
+            eq($loaded['groups'][0]['members'], $members);
+            eq($loaded['groups'][0]['containerTimeout'], 45);
+            eq($loaded['groups'][0]['forceVm'], true);
+            ok(!array_key_exists('forceContainer', $loaded['groups'][0]));
+            $store->saveConfig($loaded);
+            ok(
+                !array_key_exists(
+                    'forceContainer',
+                    DeadlockGuard\Store::read($store->configFile)['groups'][0],
+                ),
+            );
+        }
+    },
+);

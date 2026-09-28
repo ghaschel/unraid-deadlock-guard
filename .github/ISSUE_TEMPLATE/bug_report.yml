@@ -1,0 +1,88 @@
+name: Bug report
+description: Report a problem with Deadlock Guard.
+title: '[Bug] '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues before opening a new report.
+
+        **Collect debug logs before submitting:**
+
+        1. Open **Settings → Deadlock Guard → Troubleshooting** and check **Enable debug logging**.
+        2. Reproduce the problem using the same Unraid controls or app.
+        3. Click **Download debug logs** to save `deadlock-guard-debug.txt`. Do this **before rebooting**, which clears the logs.
+        4. Attach the downloaded file in **Debug logs** below. Logs include VM/container names and IDs; review them before sharing.
+        5. Disable debug logging when finished.
+
+        If Settings cannot open or logs cannot be downloaded, follow the [troubleshooting guide](https://github.com/ghaschel/unraid-deadlock-manager/blob/main/docs/TROUBLESHOOTING.md#collect-debug-logs). Explain any problem collecting logs below.
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Deadlock Guard version
+      description: Copy the full version from Settings or the Plugins tab, including any test-build suffix. If installation failed, enter the version you tried to install.
+    validations:
+      required: true
+  - type: input
+    id: unraid-version
+    attributes:
+      label: Unraid version
+      placeholder: '7.3.2'
+    validations:
+      required: true
+  - type: dropdown
+    id: affected-controls
+    attributes:
+      label: Where does the problem happen?
+      multiple: true
+      options:
+        - VMs tab
+        - Docker tab
+        - Dashboard
+        - Deadlock Guard settings
+        - API client (such as nzb360)
+        - Installation or update
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: What happened?
+      description: Include the exact error, if there is one, and which VMs or containers remained running or stopped.
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the starting state of the group members and the control or app action you used. Say whether this happens every time.
+      placeholder: |
+        1. Start with ...
+        2. Click ...
+        3. Wait for ...
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Relevant setup
+      description: Include group members, shared hardware, timeout settings, VM force-stop setting, and WebUI/API selections. For an app or browser issue, include its name and version.
+  - type: textarea
+    id: debug-logs
+    attributes:
+      label: Debug logs
+      description: Drag and drop deadlock-guard-debug.txt here or use the attachment control. If you cannot reproduce the issue or collect logs, explain why.
+    validations:
+      required: true
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Screenshots or other details
+      description: For browser issues, reload the affected tab after enabling debug logging, open Developer Tools → Console, enable Verbose messages, and copy entries filtered by [Deadlock Guard]. You can also attach screenshots and expanded Recent handoffs details here.

@@ -16,6 +16,8 @@ fi
 node --test tests/js/*.test.cjs
 NODE_PATH="$PWD/tests/api/node_modules${NODE_PATH:+:$NODE_PATH}" node --test tests/api/*.test.cjs
 python3 tests/package_test.py
+python3 tests/local_tools_test.py
+python3 -m unittest discover -s tests -p "release*_test.py"
 
 while IFS= read -r file; do
   bash -n "$file"

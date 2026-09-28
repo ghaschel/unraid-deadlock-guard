@@ -1,11 +1,49 @@
-# Beta release procedure
+# Publishing a beta
 
-1. Complete and record `HOST-VALIDATION.md` on disposable Unraid 7.3.x before claiming compatibility. Confirm tests and review pass; resolve all safety findings.
-2. Edit `packaging/deadlock-guard.plg.template` for metadata or installation changes; do not hand-edit the generated manifest. Set `VERSION` to a new date-based version (optional letter/number suffix). Install test dependencies with `npm ci --prefix tests/api --ignore-scripts --legacy-peer-deps`. Run `./scripts/test.sh`, then `python3 scripts/build.py --update-manifest`. Commit the generated root manifest along with source changes. Rebuild from the committed checkout and confirm identical `.txz` and manifest hashes.
-3. Push the reviewed branch and merge through the maintainer's normal review process. Tag the exact version. Publish a **GitHub prerelease**, uploading `dist/deadlock-guard-<version>-noarch-1.txz`, `dist/deadlock-guard.plg` and `dist/SHA256SUMS`. The build workflow creates downloadable artifacts; it does not publish automatically.
-4. Verify the public versioned asset URL, checksum and raw main-branch manifest. The CA wrapper `PluginURL` and manifest `pluginURL` must match exactly. Retain previous versioned assets. Test installation from the public manifest.
-5. Open [Community Apps submission](https://ca.unraid.net/submit/new) for `ghaschel/unraid-deadlock-manager`, run **Validate**, then **Scan**. Fix findings, repeat checks, and submit for manual plugin review. GitHub Issues is the initial support destination; do not invent a forum URL.
+Merge reviewed changes into `main`. In GitHub, open **Actions → Release → Run workflow**, select **main**, and run it. The workflow chooses the version, tests the candidate, creates its tag and GitHub prerelease, uploads the installable files, verifies public downloads, and updates Unraid's manifest last.
 
-The build uses sorted POSIX tar entries, root ownership, fixed timestamps, normalized permissions, and XZ compression. It includes no persistent configuration in the archive. Native plugin MD5 verification is supplemented by SHA-256 verification before `upgradepkg`. Every install/update/remove path preserves `config.json`.
+Check **Dry run** first if you want to inspect the validated artifacts without creating tags, releases or commits on GitHub. Dry runs work while the repository is private. Actual publication requires a public repository; the workflow never changes visibility. This implementation does not publish the first release.
 
-Publication and CA submission have not been performed by this implementation task; the versioned URLs will return errors until the matching assets are public.
+Before claiming host compatibility, complete [host validation](HOST-VALIDATION.md) with disposable groups on Unraid 7.3.x, including Tower's API `4.37.4+ad268301`. API integration accepts versions from 4.36.0 when their required interfaces match. A version passing eligibility checks is not a certification of future API releases.
+
+## What the workflow publishes
+
+Each beta has three release assets:
+
+- `deadlock-guard-<version>-noarch-1.txz`
+- `deadlock-guard.plg`
+- `SHA256SUMS`
+
+Versions use the UTC date: `2026.09.24`, then `2026.09.24a` through `2026.09.24z`, then `2026.09.24za`, `zb`, and so on. Existing numeric test suffixes advance to the next letter: `2026.09.23a3` becomes `2026.09.23b`. This preserves Unraid's string ordering. A clock date behind the latest version stops the release.
+
+GitHub generates notes from merged PRs since the previous published release, including betas. The same notes appear in `CHANGELOG.md`, GitHub's release description, and Unraid's changelog. Inspect the first release's generated notes in a dry run: GitHub chooses the initial comparison boundary when there is no previous published release. Subsequent runs supply that release's tag explicitly.
+
+The existing update URL stays unchanged:
+
+[Published Unraid manifest](https://raw.githubusercontent.com/ghaschel/unraid-deadlock-manager/main/deadlock-guard.plg)
+
+The Community Apps wrapper points to that same URL. Subsequent plugin updates become available through this manifest; each release retains its own immutable package URL.
+
+## If a release fails
+
+Use **Re-run all jobs** on the original workflow run. Its saved candidate contains the exact version, notes, source commit, package checksums and Git bundle. A retry restores that candidate, checks existing tags and assets, and resumes. It never overwrites a published asset or moves a tag. If GitHub left an empty `starter` placeholder after an interrupted upload, a retry removes only that placeholder from the verified owned draft and uploads the missing file. Do not start a different run to bypass an unfinished publication.
+
+Until all public downloads pass checksum verification, the manifest on `main` continues advertising the previous version. A failure after publication can leave a visible prerelease that is not advertised to Unraid yet; rerunning completes the final metadata update.
+
+Concurrent source changes on `main` are preserved. If another commit changes `VERSION`, `CHANGELOG.md` or `deadlock-guard.plg`, promotion stops with a conflict. Inspect those three files against the frozen source and candidate. Restore conflicting metadata to the frozen source values only when appropriate, then rerun the original workflow; do not reset source commits or replace release assets.
+
+If preparation failed before saving a candidate, no tag or release was created. After confirming that in GitHub, start a new workflow run. An expired or missing candidate cannot be regenerated by a retry. Candidate artifacts are retained for 90 days, subject to repository retention limits; keep them for unfinished releases.
+
+The workflow uses `GITHUB_TOKEN` with explicit contents-write and actions-read permissions. Branch rules must allow the release metadata commit; the workflow does not bypass protection or require a personal token. Only one release runs at a time.
+
+## Local development and temporary installs
+
+Run `python3 scripts/build.py`. It writes a candidate package, manifest and checksums under `dist/` while leaving the published root manifest unchanged. Ordinary CI validates these generated artifacts. Edit `packaging/deadlock-guard.plg.template` for installer changes; the next release renders it with the new version and checksum.
+
+Only release preparation uses `--update-manifest`. Do not commit a development package's checksum into the public update manifest. The builder normalizes file ordering, ownership, timestamps and permissions for reproducible packages.
+
+For installation before publication, follow [the local host installation steps](HOST-VALIDATION.md#installation). Reinstall a same-version test build with `plugin install /absolute/path/deadlock-guard.plg forced`; ordinary installation rejects a matching version before running the manifest. Configuration survives updates and ordinary uninstall. The plugin installer runs `unraid-api restart` after successful API setup; check Settings for any setup or restart error. A normal plugin update does not automatically require an Unraid reboot.
+
+## First Community Apps listing
+
+After the first release is public, open [Community Apps submission](https://ca.unraid.net/submit/new), run **Validate**, then **Scan**, resolve any findings, and submit for manual plugin review. GitHub Issues is the support destination. See the [official builder guidance](https://ca.unraid.net/submit/help/builders).

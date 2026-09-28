@@ -1,8 +1,8 @@
 # Deadlock Guard implementation record
 
 Approved scope: native Unraid 7.3.x exclusive resource groups; overlapping memberships;
-normal VM, Docker and Dashboard controls; graceful stop before start; configurable
-120s VM / 30s container deadlines and opt-in force stop; no automatic rollback/start
+normal VM, Docker and Dashboard controls; confirmed stop before start; configurable
+120s VM / 30s container deadlines, native Docker Stop and opt-in VM force stop; no automatic rollback/start
 on ordinary stops; asynchronous jobs; a local-only libvirt admission hook; native
 settings UI, install/update/remove, reproducible beta packaging and CA metadata.
 
@@ -27,7 +27,7 @@ are rejected. Real Unraid host smoke tests are required before verified compatib
   -> worker -> platform adapters. Hook consumes permission records and writes lifecycle events;
   it never acquires job reservations or calls libvirt.
 - For overlapping policy values, use the longest graceful deadline and require every relevant
-  group to opt into force-stop. This gives each group's protected member its full grace period.
+  group to opt into VM force-stop. Containers use native Docker Stop with automatic escalation. This gives each group's protected member its full grace period.
 - Uncertain in-flight operations quarantine reservations until an explicit, proven-safe recovery;
   no time-based automatic unlock. Runtime epoch changes invalidate old permissions.
 
@@ -38,7 +38,7 @@ are rejected. Real Unraid host smoke tests are required before verified compatib
 - Packaging: deterministic tar/XZ, SHA-256 and native manifest checksums, matching CA metadata, original SVG, MIT attribution, local validation and CI artifact workflow.
 - Host validation and public CA Validate/Scan remain external release gates. No Unraid host or public release was available in this task.
 - Ruling: uncertain submitted operations require host reboot to clear quarantine — daemon/client termination cannot establish cancellation — cost: a conservative recovery may require downtime after a benign transport failure.
-- Ruling: overlapping stop policies use the longest timeout and unanimous force permission — respects every group's grace and force choices — cost: a handoff may wait longer than one group's shorter setting.
+- Ruling: overlapping stop policies use the longest timeout and unanimous VM force permission — respects every group's grace and VM force choices — cost: a handoff may wait longer than one group's shorter setting.
 
 ## Final independent review
 The fresh-context reviewer found three Important lifecycle defects and no confirmed Critical defects. All three were reproduced before fixes.
@@ -74,7 +74,7 @@ Accepted scope: remove idle minute cron; retain lifecycle/admission checks and w
 - Replaced the custom notification popup and styles with Unraid's existing global toast API. Progress updates use a plugin-specific ID; success expires after five seconds, errors remain dismissible, and blocked consoles offer a native action. Final results fall back to Unraid's existing plain-text SweetAlert dialog if the toaster is unavailable.
 - Keyed history rows by job ID and update only changed text. Read-only polling preserves open details, manual collapse and unchanged DOM nodes instead of rebuilding every row. Tests reproduced the collapse and missing native API calls before the fixes, then passed afterward.
 - Formatted the remaining settings CSS and documented native UI host checks. The test-only toast double checks calls and lifetimes, not Unraid's native visual appearance.
-- Host evidence: ComfyUI remained running after the 30-second graceful deadline. After the user stopped it through Unraid, inspection reported an unset StopSignal, OOMKilled=false, ExitCode=137 and RestartPolicy=no. This is consistent with a later forced stop. The graceful/force policy remains unchanged; force requires explicit group settings.
+- Host evidence: ComfyUI remained running after the 30-second graceful deadline. After the user stopped it through Unraid, inspection reported an unset StopSignal, OOMKilled=false, ExitCode=137 and RestartPolicy=no. This is consistent with a later forced stop. This originally used opt-in container force-stop. The native container Stop change below replaces that policy.
 - Verification: 46 PHP tests, 9 JavaScript tests, both browser suites (including seven settings recovery cases), reproducible package/XML, PHP/Bash syntax, SHA-256 and disposable install/update/remove checks passed. Package comparison against a9 found only VERSION, integration.js, settings.js and the settings CSS changed; hooks and backend files are byte-identical. Real Unraid notification appearance and complete disposable-host validation remain pending.
 
 ## Integration status colors and external-app audit (2026.09.23a1)
@@ -89,7 +89,7 @@ Accepted scope: remove idle minute cron; retain lifecycle/admission checks and w
 - User clarified that unchecked sources bypass handoffs and both default on. Existing groups normalize both fields to true; browser/server require at least one selection. Source-filtered plans preserve overlapping group checks, reservations and permissions.
 - Added a native Nest module for Unraid API 4.37.4 (ad268301), preserving GraphQL guards and cross-resource permissions. A root-only PHP bridge feeds the existing coordinator and never repeats the native start on success. Native result shapes, ordinary stops and ungrouped actions remain intact.
 - Grouped API reboot uses guest reboot even when API is unchecked, avoiding the upstream shutdown/create gate failure. Grouped destructive Reset rejects before mutation. Meaningful regressions failed before these fixes and passed afterward.
-- API installation uses the bundled offline npm package and native plugin CLI without service restart. Live process/code proof drives a separate green/red API status. Partial module copies can be repaired and unregistered copies removed.
+- API installation copies the bundled dependency-free module and registers it through the native config-only plugin CLI without npm. The final plugin installation step then runs `unraid-api restart` once after setup and archiving succeed. Native dependencies, lockfiles and other plugins are preserved through install/update/remove. Live process/code proof drives a separate green/red API status. Partial module copies can be repaired and unregistered copies removed.
 - Independent safety review confirmed the reboot issue (fixed) and boot-order limitation (visible and documented). Native archives do not preserve root package metadata, so API boot before lifecycle restoration requires manual API restart. Actual host boot/API update tests are required before publication; automatic activation is not claimed.
 - Local verification includes PHP coordination/configuration/installer tests, GraphQL concurrency/authorization/routing tests, real Nest DI/bootstrap with simulated host files/services, both browser suites, reproducible package/XML checks and Linux install/update/remove smoke tests. See the plan for final counts/results.
 
@@ -101,4 +101,11 @@ Accepted scope: remove idle minute cron; retain lifecycle/admission checks and w
 - Moved shared PHP test support and process fixtures into explicit support/fixture directories. Removed starter-era conditional loads and silent import failures. Added pinned development-only Prettier/PHP tooling, EditorConfig and CI formatting validation. Pinned Playwright 1.55.1 in place of the old ad-hoc 1.55.0 download dependency.
 - Kept all existing uncommitted feature work. Reviewed cleanup against a pre-cleanup file snapshot. The independent review found no Critical, Important or Minor issues; live Unraid boot ordering/API activation/hardware release still require host validation.
 - Verification: 64 PHP tests, 9 native-control tests, 10 API tests, both browser suites including all seven settings recovery cases, PHP/Bash syntax, formatting, deterministic package/XML/checksums and disposable Linux install/update/remove/foreign-hook/config preservation passed. The settings fixture was visually inspected.
-- Update effect: QEMU hook bytes are identical, so an already activated VM safety gate needs no reboot for this cleanup. The API module hash changes; run `unraid-api restart` after updating and reload WebGUI tabs. Nothing is published by this cleanup.
+- Update effect: QEMU hook bytes are identical, so an already activated VM safety gate needs no reboot for this cleanup. The API module hash changes; the installer restarts Unraid API after setup. Reload WebGUI tabs afterward. Nothing is published by this cleanup.
+
+
+## Native container Stop
+
+- User approved replacing the container force-stop checkbox with Unraid’s normal Docker Stop behavior for every handoff. Docker honors the container’s configured signal and escalates after the group’s container timeout; overlapping groups use the longest timeout. Existing configurations retain their groups and VM force choice while discarding the obsolete container force field.
+- The background worker waits for Docker Stop with a bounded completion allowance, then confirms the container is stopped before starting the requested VM or container. Lost responses retain reservations. VM shutdown, optional VM force-stop, and ordinary Stop controls retain their existing behavior.
+- Keep the current version and release metadata unchanged while further requested changes are collected. This change still needs a ComfyUI-to-Windows handoff test on Tower without `--init`.

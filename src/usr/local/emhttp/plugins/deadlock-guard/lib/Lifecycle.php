@@ -155,6 +155,7 @@ final class Lifecycle
 
     public function check(bool $integration = true): void
     {
+        $this->store->debug->record('integration.check', ['managed' => $integration]);
         $this->store->locked(function () use ($integration) {
             if (!is_file($this->marker())) {
                 return;

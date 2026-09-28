@@ -10,15 +10,23 @@ const source = path.resolve(
 const adapter = () => import(pathToFileURL(source));
 const uuid = '11111111-1111-1111-1111-111111111111';
 
-async function fixture({ managed = true, failed = false, removed = false, rpcError = false } = {}) {
+async function fixture({
+  managed = true,
+  failed = false,
+  removed = false,
+  rpcError = false,
+  handoff = true,
+  debug,
+} = {}) {
   const native = [],
     requests = [],
-    permissions = [];
+    permissions = [],
+    finalizations = [];
   const schema = buildSchema(
     [
       'scalar PrefixedID',
-      'type Container { id: String! }',
-      'type DockerMutations { start(id: PrefixedID!): Container! restart(id: PrefixedID!): Container! unpause(id: PrefixedID!): Container! stop(id: PrefixedID!): Container! }',
+      'type DockerContainer { id: String! }',
+      'type DockerMutations { start(id: PrefixedID!): DockerContainer! restart(id: PrefixedID!): DockerContainer! unpause(id: PrefixedID!): DockerContainer! stop(id: PrefixedID!): DockerContainer! }',
       'type VmMutations { start(id: PrefixedID!): Boolean! resume(id: PrefixedID!): Boolean! reboot(id: PrefixedID!): Boolean! reset(id: PrefixedID!): Boolean! stop(id: PrefixedID!): Boolean! }',
       'type Mutation { docker: DockerMutations! vm: VmMutations! }',
       'type Query { healthy: Boolean! }',
@@ -32,7 +40,10 @@ async function fixture({ managed = true, failed = false, removed = false, rpcErr
       return { id };
     };
   }
-  docker.finalizeMutation = async (id) => ({ id });
+  docker.finalizeMutation = async (id, description) => {
+    finalizations.push(description);
+    return { id };
+  };
   const vm = {};
   for (const name of ['startVm', 'resumeVm', 'rebootVm', 'resetVm', 'stopVm']) {
     vm[name] = async (id) => {
@@ -70,11 +81,13 @@ async function fixture({ managed = true, failed = false, removed = false, rpcErr
   const rpc = async (body) => {
     requests.push(body);
     if (rpcError) throw Error('Bridge unavailable');
-    if (body.op === 'route') return { managed, job: { id: 'a'.repeat(32), status: 'running' } };
+    if (body.op === 'route')
+      return { managed, job: { id: 'a'.repeat(32), status: 'running', handoff } };
     return {
       job: {
         id: 'a'.repeat(32),
         status: failed ? 'failed' : 'succeeded',
+        handoff,
         error: failed ? 'Shutdown timeout' : null,
       },
     };
@@ -90,9 +103,11 @@ async function fixture({ managed = true, failed = false, removed = false, rpcErr
       return resource === 'DOCKER';
     },
     pause: async () => {},
+    debug,
   });
   return {
     native,
+    finalizations,
     requests,
     permissions,
     run: (query, variables, user = { id: 'key-123' }) =>
@@ -218,4 +233,104 @@ test('API reset is checked before the native destructive method', async () => {
   const allowed = await ungrouped.run('mutation { vm { reset(id:"' + uuid + '") } }');
   assert.equal(allowed.errors, undefined);
   assert.deepEqual(ungrouped.native, ['resetVm:' + uuid]);
+});
+
+test('API starts with no handoff keep their response without being described as a handoff', async () => {
+  const f = await fixture({ handoff: false });
+  const result = await f.run('mutation { docker { start(id:"container") { id } } }');
+  assert.equal(result.errors, undefined);
+  assert.equal(result.data.docker.start.id, 'container');
+  assert.deepEqual(f.native, []);
+  assert.deepEqual(f.finalizations, ['Deadlock Guard action']);
+});
+
+test('real API adapter traces authorization and managed handoffs without secrets', async (t) => {
+  const trace = await require('./debug-fixture.cjs')(t);
+  const f = await fixture({ debug: trace.log });
+  const result = await f.run(
+    'mutation($id:PrefixedID!){docker{start(id:$id){id}}}',
+    { id: 'media-server' },
+    { id: 'secret-api-key' },
+  );
+  assert.equal(result.errors, undefined);
+  const events = trace.events();
+  assert.ok(
+    events.some(
+      (event) => event.event === 'adapter.intercepted' && event.workloadId === 'media-server',
+    ),
+  );
+  assert.ok(
+    events.some(
+      (event) =>
+        event.event === 'authorization.result' &&
+        event.type === 'docker' &&
+        event.status === 'allowed',
+    ),
+  );
+  assert.ok(
+    events.some(
+      (event) =>
+        event.event === 'authorization.result' &&
+        event.type === 'vm' &&
+        event.status === 'rejected',
+    ),
+  );
+  assert.ok(
+    events.some(
+      (event) =>
+        event.event === 'adapter.result' &&
+        event.jobId === 'a'.repeat(32) &&
+        event.status === 'succeeded',
+    ),
+  );
+  assert.equal(
+    require('node:fs').readFileSync(trace.logFile, 'utf8').includes('secret-api-key'),
+    false,
+  );
+});
+
+test('API adapter traces native passthrough and failures without changing their outcomes', async (t) => {
+  const trace = await require('./debug-fixture.cjs')(t);
+  for (const options of [
+    { removed: true },
+    { managed: false },
+    { rpcError: true },
+    { failed: true },
+  ]) {
+    const f = await fixture({ ...options, debug: trace.log });
+    const result = await f.run('mutation { docker { start(id:"container") { id } } }');
+    assert.equal(Boolean(result.errors), Boolean(options.rpcError || options.failed));
+    assert.equal(f.native.length, options.rpcError || options.failed ? 0 : 1);
+  }
+  const events = trace.events();
+  assert.ok(
+    events.some(
+      (event) => event.event === 'adapter.passthrough' && event.reason === 'plugin_disabled',
+    ),
+  );
+  assert.ok(
+    events.some((event) => event.event === 'adapter.passthrough' && event.reason === 'unmanaged'),
+  );
+  assert.ok(events.some((event) => event.event === 'adapter.failure' && event.stage === 'rpc'));
+  assert.ok(events.some((event) => event.event === 'adapter.failure' && event.status === 'failed'));
+  const denied = await fixture({ debug: trace.log });
+  assert.ok(
+    (await denied.run('mutation { docker { start(id:"container") { id } } }', {}, null)).errors,
+  );
+  assert.ok(trace.events().some((event) => event.event === 'resolver.failure'));
+});
+
+test('a broken debug sink cannot reject or authorize an API call', async () => {
+  const f = await fixture({
+    debug: () => {
+      throw Error('Broken sink');
+    },
+  });
+  assert.equal(
+    (await f.run('mutation { docker { start(id:"container") { id } } }')).errors,
+    undefined,
+  );
+  const denied = await f.run('mutation { docker { start(id:"container") { id } } }', {}, null);
+  assert.ok(denied.errors);
+  assert.deepEqual(f.native, []);
 });

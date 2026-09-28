@@ -98,6 +98,8 @@ test(
         (new Coordinator($store, $platform))->run($job['id']);
         eq($store->job($job['id'])['status'], 'succeeded');
         eq($platform->log, ['start:vm:' . $vm['id']]);
+        eq($store->job($job['id'])['handoff'], false);
+        eq($store->job($job['id'])['history'], []);
         eq($platform->states['docker:a']['status'], 'running');
         raises(fn() => (new Gate($store))->prepare($vm), 'Start this VM');
     },
