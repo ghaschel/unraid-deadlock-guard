@@ -31,10 +31,12 @@ final class ApiIntegration
         try {
             $error = $this->store->runDir . '/api-install-error.json';
             if (is_file($error)) {
+                $record = Store::read($error);
                 return $this->failure(
-                    Store::read($error)['error'] ?? 'Unknown error',
-                    'API setup failed: ',
-                    '. See Troubleshooting.',
+                    $record['error'] ?? 'Unknown error',
+                    ($record['stage'] ?? '') === 'restart'
+                        ? 'API restart failed. See Troubleshooting.'
+                        : 'API setup failed. See Troubleshooting.',
                 );
             }
             $path = $this->store->runDir . '/api-integration.json';
@@ -53,7 +55,7 @@ final class ApiIntegration
                 ];
             }
             if (!empty($record['error'])) {
-                return $this->failure($record['error'], 'API integration unavailable: ');
+                return $this->failure($record['error']);
             }
             if ($versionError = ApiVersion::error($record['apiVersion'] ?? null)) {
                 return $this->failure($versionError);
@@ -72,21 +74,23 @@ final class ApiIntegration
                     ')',
             ];
         } catch (\Throwable $error) {
-            return [
-                'ready' => false,
-                'message' => 'Unable to check API integration: ' . $error->getMessage(),
-            ];
+            return $this->failure(
+                $error->getMessage(),
+                'Unable to check API integration. See Troubleshooting.',
+            );
         }
     }
 
-    /** Keep version details available for diagnostics without crowding the status line. */
-    private function failure(string $error, string $prefix = '', string $suffix = ''): array
-    {
+    /** Keep errors available for diagnostics without crowding the status line. */
+    private function failure(
+        string $error,
+        string $summary = 'API integration unavailable. See Troubleshooting.',
+    ): array {
         $requirement = ApiVersion::requirement();
         if (str_starts_with($error, $requirement)) {
             return ['ready' => false, 'message' => $requirement, 'details' => $error];
         }
-        return ['ready' => false, 'message' => $prefix . $error . $suffix];
+        return ['ready' => false, 'message' => $summary, 'details' => $error];
     }
 
     public function assertReady(string $adapterHash): void

@@ -8,6 +8,8 @@ final class Runner implements CommandRunner
 {
     private const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 
+    public function __construct(private ?DebugLog $debug = null) {}
+
     public function run(
         array $argv,
         float $timeout = 10,
@@ -22,6 +24,10 @@ final class Runner implements CommandRunner
                 throw new RuntimeException('Invalid command argument');
             }
         }
+        $debug = $this->debug ?? DebugLog::system();
+        $started = hrtime(true);
+        $context = ['type' => basename($argv[0]), 'mutation' => $mutation, 'timeout' => $timeout];
+        $debug->record('process.started', $context);
         $environment = [
             'PATH' => '/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin',
             'LC_ALL' => 'C',
@@ -36,6 +42,7 @@ final class Runner implements CommandRunner
             ['bypass_shell' => true],
         );
         if (!is_resource($process)) {
+            $debug->record('process.failed', $context + ['reason' => 'spawn_failed']);
             throw new RuntimeException('Could not start command');
         }
         if ($input !== null) {
@@ -78,14 +85,35 @@ final class Runner implements CommandRunner
             $stdout .= stream_get_contents($pipes[1]);
             $stderr .= stream_get_contents($pipes[2]);
             if ($status['exitcode'] !== 0) {
-                $message = basename($argv[0]) . ': ' . trim(substr($stderr ?: $stdout, 0, 2000));
+                // Commands often print warnings before the actual failure. Keep the tail.
+                $output = $stderr ?: $stdout;
+                $detail =
+                    (strlen($output) > 2000 ? "[Earlier output omitted]\n" : '') .
+                    trim(substr($output, -2000));
+                $message = basename($argv[0]) . ': ' . $detail;
                 if ($mutation) {
                     throw new UncertainOperation($message . '; operation outcome is uncertain');
                 }
                 throw new RuntimeException($message);
             }
             return $stdout;
+        } catch (\Throwable $error) {
+            $debug->record(
+                'process.failed',
+                $context + [
+                    'errorType' => get_class($error),
+                    'exitCode' => $status['exitcode'] ?? null,
+                ],
+            );
+            throw $error;
         } finally {
+            $debug->record(
+                'process.finished',
+                $context + [
+                    'durationMs' => round((hrtime(true) - $started) / 1e6),
+                    'exitCode' => $status['exitcode'] ?? null,
+                ],
+            );
             if ($status['running'] ?? true) {
                 proc_terminate($process, 15);
                 usleep(50000);

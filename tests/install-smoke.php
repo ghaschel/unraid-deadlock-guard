@@ -38,6 +38,67 @@ file_put_contents(
     "#!/bin/bash\nrm -rf /usr/local/emhttp/plugins/deadlock-guard\n",
 );
 chmod('/usr/local/sbin/removepkg', 0755);
+// Keep npm deliberately unusable: setup must copy only our module and use
+// Unraid's config-only CLI. Real filesystem writes run inside this container.
+$apiBase = '/usr/local/unraid-api';
+$apiPlugin = $apiBase . '/node_modules/unraid-api-plugin-deadlock-guard';
+mkdir($apiBase . '/node_modules/other-plugin', 0755, true);
+file_put_contents($apiBase . '/node_modules/other-plugin/index.js', 'foreign API plugin');
+file_put_contents(
+    $apiBase . '/package.json',
+    json_encode([
+        'version' => '4.37.4+ad268301',
+        'dependencies' => ['@apollo/server' => '5.5.1'],
+        'peerDependencies' => ['other-plugin' => '1.0.0'],
+    ]),
+);
+file_put_contents($apiBase . '/package-lock.json', 'preserve native lockfile');
+file_put_contents(
+    '/usr/local/bin/npm',
+    "#!/bin/bash\necho 'Unexpected npm invocation' >&2\nexit 1\n",
+);
+chmod('/usr/local/bin/npm', 0755);
+file_put_contents(
+    '/usr/local/bin/unraid-api',
+    <<<'CLI'
+    #!/usr/bin/php
+    <?php
+    if (array_slice($argv, 1) === ['restart']) {
+        $config = json_decode(file_get_contents('/boot/config/plugins/dynamix.my.servers/configs/api.json'), true);
+        if (!in_array('unraid-api-plugin-deadlock-guard', $config['plugins'] ?? [], true)
+            || !is_file('/tmp/api-dependencies.tgz')
+            || !is_file('/usr/local/emhttp/plugins/deadlock-guard/VERSION')) {
+            exit(1);
+        }
+        file_put_contents('/tmp/api-restarts.log', "restart\n", FILE_APPEND);
+        if (is_file('/tmp/fail-api-restart')) {
+            fwrite(STDERR, "Simulated API restart failure\n");
+            exit(1);
+        }
+        exit(0);
+    }
+    $install = ($argv[2] ?? '') === 'install';
+    $expected = ['plugins', $install ? 'install' : 'remove', 'unraid-api-plugin-deadlock-guard', $install ? '--bundled' : '--bypass-npm', '--no-restart'];
+    if (array_slice($argv, 1) !== $expected) { exit(1); }
+    $path = '/boot/config/plugins/dynamix.my.servers/configs/api.json';
+    @mkdir(dirname($path), 0755, true);
+    file_put_contents($path, json_encode(['plugins' => $install ? ['other-plugin', 'unraid-api-plugin-deadlock-guard'] : ['other-plugin']]));
+    CLI
+    ,
+);
+chmod('/usr/local/bin/unraid-api', 0755);
+@mkdir('/etc/rc.d', 0755, true);
+file_put_contents(
+    '/etc/rc.d/rc.unraid-api',
+    <<<'ARCHIVE'
+    #!/bin/bash
+    set -eu
+    [ "$#" -eq 1 ] && [ "$1" = archive-dependencies ]
+    tar -czf /tmp/api-dependencies.tgz -C /usr/local/unraid-api node_modules
+    ARCHIVE
+    ,
+);
+chmod('/etc/rc.d/rc.unraid-api', 0755);
 $xml = simplexml_load_file('/app/dist/deadlock-guard.plg');
 foreach ($xml->FILE as $file) {
     if (isset($file->URL)) {
@@ -80,6 +141,23 @@ $expectedVersion = (string) $xml['version'];
 @mkdir($flash, 0700, true);
 file_put_contents($flash . '/foreign.cron', 'foreign cron');
 $run('install');
+check(
+    file_get_contents('/tmp/api-restarts.log') === "restart\n",
+    'Install must restart the API exactly once',
+);
+check(is_file($apiPlugin . '/index.mjs'), 'API setup did not copy the module');
+foreach (glob($base . '/api-plugin/*.mjs') as $moduleFile) {
+    check(
+        file_get_contents($moduleFile) ===
+            file_get_contents($apiPlugin . '/' . basename($moduleFile)),
+        'API module differs from packaged source',
+    );
+}
+check(
+    !is_file('/var/run/deadlock-guard/api-install-error.json'),
+    'API installation recorded an error',
+);
+check(is_file('/tmp/api-dependencies.tgz'), 'API dependencies were not archived');
 check(is_file($base . '/lib/Coordinator.php'), 'Install missing payload');
 check(is_executable('/etc/libvirt/hooks/qemu.d/99-deadlock-guard'), 'Missing executable hook');
 check(!is_file($flash . '/deadlock-guard.cron'), 'Installation created a cron entry');
@@ -87,6 +165,19 @@ check(file_get_contents($flash . '/foreign.cron') === 'foreign cron', 'Foreign c
 // Exercise the actual executable hook without a daemon or recursive libvirt calls.
 require $base . '/lib/bootstrap.php';
 $store = DeadlockGuard\Store::system();
+check(!$store->debug->enabled(), 'Debug logging must default off');
+execute([$base . '/scripts/lifecycle', 'debug-on']);
+check($store->debug->enabled(), 'Terminal debug enable did not persist');
+check(
+    str_contains($store->debug->download(), 'debug.enabled'),
+    'Debug log could not be downloaded',
+);
+execute([$base . '/scripts/lifecycle', 'debug-off']);
+check(!$store->debug->enabled(), 'Terminal debug disable did not persist');
+$debugContents = $store->debug->download();
+execute([$base . '/scripts/lifecycle', 'check']);
+check($store->debug->download() === $debugContents, 'Disabled logging wrote new entries');
+
 $vm = ['type' => 'vm', 'id' => '11111111-1111-1111-1111-111111111111'];
 $ct = ['type' => 'docker', 'id' => 'disposable'];
 $store->saveConfig([
@@ -176,6 +267,10 @@ execute([$base . '/scripts/lifecycle', 'drain']);
 check(is_file($store->runDir . '/draining.json'), 'Array stop did not block admission');
 execute([$base . '/scripts/lifecycle', 'activate']);
 check(!is_file($store->runDir . '/draining.json'), 'Array startup did not reactivate admission');
+check(
+    file_get_contents('/tmp/api-restarts.log') === "restart\n",
+    'Routine lifecycle checks restarted the API',
+);
 $config = file_get_contents($flash . '/config.json');
 // The original date-only release sorts after same-day alpha-suffixed test builds.
 file_put_contents($base . '/VERSION', "2026.09.22\n");
@@ -185,6 +280,10 @@ check(
     'Upgrade skipped the original date-only installation',
 );
 check(file_get_contents($flash . '/config.json') === $config, 'Upgrade replaced configuration');
+check(
+    file_get_contents('/tmp/api-restarts.log') === "restart\nrestart\n",
+    'Upgrade must restart the API exactly once',
+);
 // A package tool may exit zero without replacing files. Do not announce success.
 file_put_contents($base . '/VERSION', "2026.09.22\n");
 putenv('DG_TEST_SKIP_PACKAGE=1');
@@ -201,6 +300,10 @@ check(
     is_file($store->runDir . '/draining.json'),
     'Failed upgrade released the maintenance barrier',
 );
+check(
+    file_get_contents('/tmp/api-restarts.log') === "restart\nrestart\n",
+    'Failed package installation restarted the API',
+);
 $run('install');
 check(
     trim(file_get_contents($base . '/VERSION')) === $expectedVersion,
@@ -211,7 +314,47 @@ check(
     'Successful retry retained the maintenance barrier',
 );
 check(file_get_contents($flash . '/config.json') === $config, 'Retry replaced configuration');
+file_put_contents('/tmp/fail-api-restart', 'fail');
+$run('install');
+$errorFile = '/var/run/deadlock-guard/api-install-error.json';
+check(
+    DeadlockGuard\Store::read($errorFile)['stage'] === 'restart',
+    'Restart failure was not retained',
+);
+check(file_get_contents($flash . '/config.json') === $config, 'Restart failure changed groups');
+execute([$base . '/scripts/lifecycle', 'activate']);
+check(is_file($errorFile), 'Routine restoration cleared the restart failure');
+unlink('/tmp/fail-api-restart');
+execute([$base . '/scripts/lifecycle', 'api-install']);
+check(!is_file($errorFile), 'Documented retry did not clear the restart failure');
 $run('remove');
+check(
+    file_get_contents('/tmp/api-restarts.log') === "restart\nrestart\nrestart\nrestart\nrestart\n",
+    'Retry or removal restarted the API incorrectly',
+);
+check(!is_dir($apiPlugin), 'Removal left API module files');
+check(
+    file_get_contents($apiBase . '/package-lock.json') === 'preserve native lockfile',
+    'Native lockfile changed',
+);
+check(
+    file_get_contents($apiBase . '/node_modules/other-plugin/index.js') === 'foreign API plugin',
+    'Other API plugin changed',
+);
+$apiMetadata = json_decode(file_get_contents($apiBase . '/package.json'), true);
+check(
+    $apiMetadata['dependencies'] === ['@apollo/server' => '5.5.1'],
+    'Native dependencies changed',
+);
+check(
+    $apiMetadata['peerDependencies'] === ['other-plugin' => '1.0.0'],
+    'Other peer dependencies changed',
+);
+$apiPlugins = json_decode(
+    file_get_contents('/boot/config/plugins/dynamix.my.servers/configs/api.json'),
+    true,
+)['plugins'];
+check($apiPlugins === ['other-plugin'], 'Other API registration changed');
 check(!is_dir($base), 'Removal left payload');
 check(file_get_contents($flash . '/config.json') === $config, 'Removal lost configuration');
 check(
@@ -220,4 +363,4 @@ check(
 );
 check(!is_file($flash . '/installed.json'), 'Stale mounted-image hook still enabled');
 check(!is_file($flash . '/deadlock-guard.cron'), 'Cron retained after removal');
-echo "PASS disposable Linux manifest install/update/remove and foreign-hook/config preservation\n";
+echo "PASS disposable Linux manifest install/update/remove and foreign-hook/config/API dependency preservation\n";

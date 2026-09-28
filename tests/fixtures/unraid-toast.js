@@ -2,6 +2,10 @@
 (() => {
   const timers = new Map();
   const notices = new Map();
+  // vue-sonner 2.0.9 captures remainingTime on mount, retaining Infinity when
+  // a loading/error toast is updated to success under the same ID.
+  // https://github.com/xiaoluoboding/vue-sonner/blob/v2.0.9/src/packages/Toast.vue
+  const remainingTime = new Map();
   window.nativeToastCalls = [];
 
   function dismiss(id) {
@@ -9,6 +13,7 @@
     notices.get(id)?.remove();
     notices.delete(id);
     timers.delete(id);
+    remainingTime.delete(id);
   }
 
   function show(kind, title, options = {}) {
@@ -22,6 +27,7 @@
       notice.dataset.testToastId = id;
       document.body.append(notice);
       notices.set(id, notice);
+      remainingTime.set(id, options.duration ?? 4000);
     }
     notice.replaceChildren();
     const heading = document.createElement('strong');
@@ -42,8 +48,8 @@
       button.onclick = options.action.onClick;
       notice.append(button);
     }
-    if (Number.isFinite(options.duration)) {
-      timers.set(id, setTimeout(() => dismiss(id), options.duration));
+    if (kind !== 'loading' && options.duration !== Infinity && Number.isFinite(remainingTime.get(id))) {
+      timers.set(id, setTimeout(() => dismiss(id), remainingTime.get(id)));
     }
     return id;
   }

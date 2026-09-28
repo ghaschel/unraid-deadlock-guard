@@ -7,7 +7,7 @@
   launch="DeadlockGuard"
   pluginURL="https://raw.githubusercontent.com/ghaschel/unraid-deadlock-manager/main/deadlock-guard.plg"
   support="https://github.com/ghaschel/unraid-deadlock-manager/issues"
-  icon="fa-shield"
+  icon="icon-deadlock-guard"
   min="7.3.0"
   max="7.3.999"
 >
@@ -67,7 +67,9 @@ if [[ "$installed_version" != "$expected_version" ]]; then
   exit 1
 fi
 
-"$plugin_dir/scripts/lifecycle" install
+# Package extraction prepares the module without restarting. Reload the API once
+# after the verified payload and registration are in place.
+"$plugin_dir/scripts/lifecycle" install --restart-api
 echo 'Deadlock Guard installed.'
 echo 'REBOOT REQUIRED after first installation: reboot Unraid when safe to activate VM protection.'
     ]]></INLINE>

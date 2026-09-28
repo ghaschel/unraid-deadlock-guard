@@ -7,9 +7,10 @@ use RuntimeException;
 /** Register a bundled module through Unraid's supported API plugin mechanism. */
 final class ApiInstaller
 {
-    private const NAME = 'unraid-api-plugin-deadlock-guard';
+    private const NAME = ApiModuleFiles::NAME;
     private string $module;
     private CommandRunner $runner;
+    private string $phase = 'setup';
 
     public function __construct(
         private Store $store,
@@ -41,9 +42,11 @@ final class ApiInstaller
         return is_file($path) && in_array(self::NAME, Store::read($path)['plugins'] ?? [], true);
     }
 
-    public function install(): void
+    public function install(bool $restart = false): void
     {
-        $this->locked(function () {
+        $this->phase = 'setup';
+        $this->store->debug->record('api.install_started');
+        $this->locked(function () use ($restart) {
             if (!is_file(dirname($this->store->configFile) . '/installed.json')) {
                 return;
             }
@@ -56,41 +59,11 @@ final class ApiInstaller
                 throw new RuntimeException($versionError);
             }
 
-            $installed = $base . '/node_modules/' . self::NAME;
-            $expected = (new ApiIntegration($this->store, $this->module))->hash();
-            try {
-                $installedHash = (new ApiIntegration($this->store, $installed))->hash();
-            } catch (RuntimeException) {
-                $installedHash = '';
-            }
-            $same =
-                $installedHash === $expected && isset($metadata['peerDependencies'][self::NAME]);
+            $files = new ApiModuleFiles($base, $this->module);
             $pending = $this->store->runDir . '/api-archive-pending.json';
-            if (!$same) {
-                $package = dirname($this->module) . '/api-plugin.tgz';
-                if (!is_file($package)) {
-                    throw new RuntimeException('Bundled API package is missing');
-                }
+            if (!$files->matches()) {
                 Store::atomic($pending, ['pending' => true]);
-                $this->runner->run(
-                    [
-                        'npm',
-                        'install',
-                        '--prefix',
-                        $base,
-                        '--offline',
-                        '--ignore-scripts',
-                        '--save-peer',
-                        '--save-exact',
-                        '--no-audit',
-                        '--no-fund',
-                        $package,
-                    ],
-                    timeout: 120,
-                );
-                if ((new ApiIntegration($this->store, $installed))->hash() !== $expected) {
-                    throw new RuntimeException('Installed API module failed its integrity check');
-                }
+                $files->install();
             }
             if (!$this->registered()) {
                 Store::atomic($pending, ['pending' => true]);
@@ -109,74 +82,102 @@ final class ApiInstaller
                     throw new RuntimeException('API plugin registration did not complete');
                 }
             }
-            if (is_file($pending)) {
-                $this->runner->run(
-                    [$this->root . '/etc/rc.d/rc.unraid-api', 'archive-dependencies'],
-                    timeout: 120,
-                );
-                unlink($pending);
+            $this->archivePending();
+            if ($restart) {
+                $this->restartApi();
             }
-            @unlink($this->store->runDir . '/api-install-error.json');
+            $errorFile = $this->store->runDir . '/api-install-error.json';
+            $previousError = is_file($errorFile) ? Store::read($errorFile) : [];
+            // Routine restoration cannot resolve a failed restart. Keep that error
+            // until a full setup-and-restart retry succeeds.
+            if ($restart || ($previousError['stage'] ?? '') !== 'restart') {
+                @unlink($errorFile);
+            }
         });
     }
 
     /** An API failure must stay visible without disabling working WebUI protection. */
-    public function attemptInstall(): void
+    public function attemptInstall(bool $restart = false): bool
     {
         try {
-            $this->install();
+            $this->install($restart);
+            $this->store->debug->record('api.install_completed');
+            return true;
         } catch (\Throwable $error) {
+            $this->store->debug->record('api.install_failed', ['errorType' => get_class($error)]);
             Store::atomic($this->store->runDir . '/api-install-error.json', [
                 'error' => $error->getMessage(),
+                'stage' => $this->phase,
             ]);
             error_log('Deadlock Guard API integration: ' . $error->getMessage());
+            return false;
         }
+    }
+
+    /** Only the final manifest step requests a restart, after setup has succeeded. */
+    private function restartApi(): void
+    {
+        $this->phase = 'restart';
+        $this->store->debug->record('api.restart_started');
+        try {
+            $this->runner->run(
+                [$this->root . '/usr/local/bin/unraid-api', 'restart'],
+                timeout: 120,
+            );
+        } catch (\Throwable $error) {
+            $this->store->debug->record('api.restart_failed', ['errorType' => get_class($error)]);
+            throw new RuntimeException(
+                'Unraid API restart failed. Run /usr/local/emhttp/plugins/deadlock-guard/scripts/lifecycle api-install to retry setup and restart. ' .
+                    $error->getMessage(),
+                0,
+                $error,
+            );
+        }
+        $this->store->debug->record('api.restart_completed');
+    }
+
+    private function archivePending(): void
+    {
+        $pending = $this->store->runDir . '/api-archive-pending.json';
+        if (!is_file($pending)) {
+            return;
+        }
+        $this->runner->run(
+            [$this->root . '/etc/rc.d/rc.unraid-api', 'archive-dependencies'],
+            timeout: 120,
+        );
+        unlink($pending);
     }
 
     public function remove(): void
     {
         $this->locked(function () {
-            if ($this->registered()) {
+            $files = new ApiModuleFiles($this->root . '/usr/local/unraid-api', $this->module);
+            $files->assertSafe();
+            $registered = $this->registered();
+            if ($registered || $files->present()) {
+                Store::atomic($this->store->runDir . '/api-archive-pending.json', [
+                    'pending' => true,
+                ]);
+            }
+            if ($registered) {
                 $this->runner->run(
                     [
                         $this->root . '/usr/local/bin/unraid-api',
                         'plugins',
                         'remove',
                         self::NAME,
+                        '--bypass-npm',
                         '--no-restart',
                     ],
-                    timeout: 120,
+                    timeout: 60,
                 );
                 if ($this->registered()) {
                     throw new RuntimeException('API module is still registered');
                 }
-            } else {
-                // Recover a partial installation whose registration never completed.
-                $base = $this->root . '/usr/local/unraid-api';
-                if (
-                    is_file($base . '/package.json') &&
-                    isset(Store::read($base . '/package.json')['peerDependencies'][self::NAME])
-                ) {
-                    $this->runner->run(
-                        [
-                            'npm',
-                            'uninstall',
-                            '--prefix',
-                            $base,
-                            '--offline',
-                            '--ignore-scripts',
-                            '--no-audit',
-                            '--no-fund',
-                            self::NAME,
-                        ],
-                        timeout: 120,
-                    );
-                    $this->runner->run(
-                        [$this->root . '/etc/rc.d/rc.unraid-api', 'archive-dependencies'],
-                        timeout: 120,
-                    );
-                }
             }
+            $files->remove();
+            $this->archivePending();
             @unlink($this->store->runDir . '/api-integration.json');
             @unlink($this->store->runDir . '/api-install-error.json');
         });

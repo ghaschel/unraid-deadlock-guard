@@ -13,11 +13,13 @@ const { buildSchema } = require('graphql');
 // the host files and Docker/libvirt services are simulated; no host mutation.
 const cases = [
   ...require('../fixtures/api-versions.json'),
-  ...['missing provider', 'duplicate provider', 'missing enforcement'].map((failure) => ({
-    version: '4.37.4+ad268301',
-    compatible: false,
-    failure,
-  })),
+  ...['missing provider', 'duplicate provider', 'missing enforcement', 'missing resolver'].map(
+    (failure) => ({
+      version: '4.37.4+ad268301',
+      compatible: false,
+      failure,
+    }),
+  ),
 ];
 for (const { version, compatible, failure } of cases) {
   test('Nest bootstrap validates ' + (failure || JSON.stringify(version)), async (t) => {
@@ -84,11 +86,21 @@ for (const { version, compatible, failure } of cases) {
       for (const field of Object.values(host.schema.getType(type).getFields()))
         field.resolve = () => true;
     }
+    if (failure === 'missing resolver')
+      host.schema.getType('DockerMutations').getFields().start.resolve = undefined;
     const source = path.resolve(
       __dirname,
       '../../src/usr/local/emhttp/plugins/deadlock-guard/api-plugin/index.mjs',
     );
     const { ApiModule, adapter } = await import(pathToFileURL(source));
+    const trace = await require('./debug-fixture.cjs')(t);
+    const provider = Reflect.getMetadata('providers', ApiModule)[0];
+    const originalFactory = provider.useFactory;
+    t.mock.method(provider, 'useFactory', (...args) => {
+      const runtime = originalFactory(...args);
+      runtime.debug = trace.log;
+      return runtime;
+    });
     assert.equal(adapter, 'nestjs');
     const authorization = new AuthZService();
     if (failure === 'missing enforcement') authorization.enforce = undefined;
@@ -108,8 +120,24 @@ for (const { version, compatible, failure } of cases) {
     const app = await NestFactory.createApplicationContext(Application, { logger: false });
     try {
       const status = JSON.parse(files.get(statusFile));
+      const events = trace.events();
+      assert.ok(events.some((event) => event.event === 'bootstrap.begin'));
+      assert.ok(
+        events.some(
+          (event) => event.event === (compatible ? 'bootstrap.success' : 'bootstrap.failure'),
+        ),
+      );
       if (!compatible) {
-        assert.match(status.error, failure ? /provider|authorization/ : /version/);
+        const event = events.find((item) => item.event === 'bootstrap.failure');
+        assert.equal(
+          event.stage,
+          failure === 'missing resolver' ? 'interface' : failure ? 'providers' : 'version',
+        );
+        assert.equal(event.errorClass, 'Error');
+        assert.equal(event.message, undefined);
+      }
+      if (!compatible) {
+        assert.match(status.error, failure ? /provider|authorization|interface/ : /version/);
         assert.deepEqual(status.apiVersion, version);
         assert.equal(docker.start, originalStart);
         return;
@@ -120,6 +148,8 @@ for (const { version, compatible, failure } of cases) {
       assert.notEqual(docker.start, originalStart);
     } finally {
       await app.close();
+      assert.ok(trace.events().some((event) => event.event === 'shutdown.begin'));
+      assert.ok(trace.events().some((event) => event.event === 'shutdown.success'));
     }
     assert.equal(docker.start, originalStart);
     assert.equal(files.has(statusFile), false);

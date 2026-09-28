@@ -53,6 +53,11 @@ final class Recovery
                     $job['status'] === 'failed' ? 'Recovered abandoned job' : 'Recovery required';
                 $job['updatedAt'] = microtime(true);
                 $this->store->putJob($job);
+                $this->store->debug->record('job.recovered', [
+                    'jobId' => $job['id'],
+                    'status' => $job['status'],
+                    'reason' => $job['inFlight'] !== null ? 'command_in_flight' : 'worker_exited',
+                ]);
                 $changed[] = $job;
             }
             return $changed;

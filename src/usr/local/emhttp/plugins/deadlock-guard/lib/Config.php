@@ -128,13 +128,12 @@ final class Config
                 }
                 $result[$field] = $value;
             }
-            foreach (['forceVm', 'forceContainer'] as $field) {
-                $value = $group[$field] ?? false;
-                if (!is_bool($value)) {
-                    throw new RuntimeException('Invalid force-stop flag');
-                }
-                $result[$field] = $value;
+            $forceVm = $group['forceVm'] ?? false;
+            if (!is_bool($forceVm)) {
+                throw new RuntimeException('Invalid VM force-stop flag');
             }
+            $result['forceVm'] = $forceVm;
+            // Legacy container force flags are omitted; containers now use native Docker Stop.
             $groups[] = $result;
         }
         return ['version' => self::VERSION, 'groups' => $groups];
@@ -258,11 +257,11 @@ final class Config
     {
         $isVm = $member['type'] === 'vm';
         $timeout = 0;
-        $force = true;
+        $force = $isVm;
         foreach (self::groupsFor($config, $member) as $group) {
             if (in_array($group['id'], $plan['groups'], true)) {
                 $timeout = max($timeout, $group[$isVm ? 'vmTimeout' : 'containerTimeout']);
-                $force = $force && $group[$isVm ? 'forceVm' : 'forceContainer'];
+                $force = $force && $group['forceVm'];
             }
         }
         return [

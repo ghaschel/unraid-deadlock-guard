@@ -1,6 +1,6 @@
 const { chromium } = require('playwright');
-const fs = require('node:fs'),
-  path = require('node:path'),
+const { execFileSync } = require('node:child_process');
+const path = require('node:path'),
   assert = require('node:assert/strict');
 (async () => {
   const browser = await chromium.launch(
@@ -29,11 +29,15 @@ const fs = require('node:fs'),
           vmTimeout: 120,
           containerTimeout: 30,
           forceVm: false,
-          forceContainer: false,
         },
       ],
     };
     let complete = false,
+      debugEnabled = false,
+      failDebug = false,
+      actualHandoff = true,
+      managed = true,
+      actionErrors = [],
       saveGate = null,
       failSave = false,
       saveRequests = 0,
@@ -46,6 +50,7 @@ const fs = require('node:fs'),
       createdAt: 1790078400,
       updatedAt: 1790078400,
       status: complete ? 'succeeded' : 'running',
+      handoff: actualHandoff,
       phase: complete ? 'Handoff complete' : 'Waiting for resources to be released',
       progress: { workloads: complete ? [] : workloads },
       history: [],
@@ -73,7 +78,15 @@ const fs = require('node:fs'),
               errors: {},
             },
             jobs: [],
+            actionErrors,
           };
+        if (req.op === 'debug') {
+          if (failDebug)
+            return route.fulfill({ status: 409, json: { error: 'Unable to save debug setting' } });
+          if ('enabled' in req) debugEnabled = req.enabled;
+          data = { enabled: debugEnabled };
+        }
+        if (req.op === 'debug-log') data = { log: 'Deadlock Guard debug logs\nfixture-event' };
         if (req.op === 'integration') {
           integrationChecks++;
           data = {
@@ -83,7 +96,7 @@ const fs = require('node:fs'),
         }
         if (req.op === 'pending') {
           pendingChecks++;
-          data = { jobs: [] };
+          data = { jobs: [], actionErrors };
         }
         if (req.op === 'config') {
           saveRequests++;
@@ -98,17 +111,17 @@ const fs = require('node:fs'),
         }
         if (req.op === 'history') {
           historyReads++;
-          data = { jobs: historyJobs };
+          data = { jobs: historyJobs, actionErrors };
         }
         if (req.op === 'route')
           data = {
-            managed: true,
+            managed,
             requests: [{ workload: req.native.type === 'vm' ? a : b, action: 'start' }],
             job: job(),
           };
         if (req.op === 'status') data = { job: job() };
         if (req.op === 'console') data = { protocol: 'vnc', websocket: 5700, name: 'lava-lamp' };
-        return route.fulfill({ json: data });
+        return route.fulfill({ json: { ...data, debugEnabled } });
       }
       const file = ['/Docker', '/Dashboard', '/VMs'].includes(url.pathname)
         ? 'tests/fixtures/unraid-7.3.html'
@@ -132,13 +145,59 @@ const fs = require('node:fs'),
       await page.clock.runFor(1000);
       await toast.filter({ hasText: 'Handoff complete' }).waitFor();
       assert.deepEqual(await page.evaluate(() => nativeCalls), []);
-      await page.clock.runFor(5100);
+      await page.clock.runFor(4900);
+      assert.equal(await toast.isVisible(), true, 'Success disappeared before five seconds');
+      await page.clock.runFor(200);
       assert.equal(await toast.isVisible(), false, 'Completed handoff notification stayed visible');
     }
+    actualHandoff = false;
+    complete = true;
+    for (const tab of ['/Docker', '/VMs', '/Dashboard']) {
+      await page.goto('http://fixture' + tab);
+      await page.evaluate(() => {
+        window.refreshes = 0;
+        window.loadlist = () => {
+          window.refreshes++;
+        };
+      });
+      for (const button of ['#start-container', '#start-vm']) {
+        const before = await page.evaluate(() => refreshes);
+        await page.locator(button).click();
+        await page.waitForFunction((previous) => refreshes > previous, before);
+        assert.deepEqual(await page.evaluate(() => nativeToastCalls), []);
+      }
+      assert.deepEqual(await page.evaluate(() => nativeCalls), []);
+      await page.evaluate(() => {
+        eventControl({ action: 'stop', container: 'aaaaaaaaaaaa' });
+        ajaxVMDispatch({ action: 'domain-stop', uuid: '11111111-1111-1111-1111-111111111111' });
+      });
+      assert.equal(await page.evaluate(() => nativeCalls.length), 2);
+      assert.deepEqual(await page.evaluate(() => nativeToastCalls), []);
+    }
+    managed = false;
+    await page.locator('#start-container').click();
+    await page.waitForFunction(() => nativeCalls.length === 3);
+    assert.deepEqual(await page.evaluate(() => nativeToastCalls), []);
+    managed = true;
+    actualHandoff = true;
     await page.locator('#native-fixture').evaluate((node) => node.remove());
-    const markup = fs
-      .readFileSync('src/usr/local/emhttp/plugins/deadlock-guard/DeadlockGuard.page', 'utf8')
-      .split('---\n')[1]
+    const renderedSettings = execFileSync(
+      'docker',
+      [
+        'run',
+        '--rm',
+        '-v',
+        process.cwd() + ':/app:ro',
+        '-w',
+        '/app',
+        'php:8.3-cli',
+        'php',
+        'tests/render-settings.php',
+      ],
+      { encoding: 'utf8' },
+    );
+    const markup = renderedSettings
+      .match(/<body>([\s\S]*)<\/body>/)[1]
       .replace(/<script[^>]*>[\s\S]*?<\/script>/g, '');
     await page
       .locator('#settings-fixture')
@@ -146,7 +205,8 @@ const fs = require('node:fs'),
     await page.addScriptTag({
       path: 'src/usr/local/emhttp/plugins/deadlock-guard/javascript/settings.js',
     });
-    await page.locator('#dg-message').filter({ hasText: 'Configuration loaded' }).waitFor();
+    await page.locator('[data-field="name"]').waitFor();
+    assert.equal(await page.locator('#dg-message').isVisible(), false);
     assert.equal(await page.locator('.dg-group img').count(), 0);
     const webuiSource = page.locator('[data-field="webui"]');
     const apiSource = page.locator('[data-field="api"]');
@@ -176,6 +236,34 @@ const fs = require('node:fs'),
       await response;
     };
     await refreshHistory();
+    historyJobs.push({
+      ...job(),
+      id: 'c'.repeat(32),
+      handoff: false,
+      status: 'succeeded',
+      phase: 'Action complete',
+    });
+    actionErrors = [
+      {
+        ...job(),
+        id: 'd'.repeat(32),
+        handoff: false,
+        status: 'quarantined',
+        phase: 'Operation uncertain',
+        error: 'Start result unknown',
+      },
+    ];
+    await refreshHistory();
+    assert.equal(await page.locator('#dg-history details').count(), 1);
+    await page.getByText('Troubleshooting', { exact: true }).click();
+    assert.equal(await page.locator('#dg-action-errors-section').isVisible(), true);
+    assert.equal(await page.locator('#dg-action-errors details').count(), 1);
+    await page.locator('#dg-action-errors summary').click();
+    assert.match(await page.locator('#dg-action-errors pre').innerText(), /Start result unknown/);
+    await page.getByText('Troubleshooting', { exact: true }).click();
+    actionErrors = [];
+    await refreshHistory();
+    assert.equal(await page.locator('#dg-action-errors-section').isVisible(), false);
     const historyRow = page.locator('#dg-history details').first();
     await historyRow.locator('summary').click();
     await historyRow.evaluate((node) => (window.originalHistoryRow = node));
@@ -258,6 +346,31 @@ const fs = require('node:fs'),
       false,
     );
     await page.getByText('Troubleshooting', { exact: true }).click();
+    const debugToggle = page.getByRole('checkbox', { name: 'Enable debug logging' });
+    assert.equal(await debugToggle.isChecked(), false);
+    await debugToggle.check();
+    await page.locator('#dg-debug-status').filter({ hasText: 'Debug logging enabled' }).waitFor();
+    assert.equal(debugEnabled, true);
+    const downloadEvent = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Download debug logs' }).click();
+    const download = await downloadEvent;
+    assert.equal(download.suggestedFilename(), 'deadlock-guard-debug.txt');
+    assert.match(require('node:fs').readFileSync(await download.path(), 'utf8'), /fixture-event/);
+    failDebug = true;
+    await debugToggle.uncheck();
+    await page
+      .locator('#dg-debug-status')
+      .filter({ hasText: 'Unable to save debug setting' })
+      .waitFor();
+    assert.equal(
+      await debugToggle.isChecked(),
+      true,
+      'Failed save changed the displayed debug state',
+    );
+    failDebug = false;
+    await debugToggle.uncheck();
+    await page.locator('#dg-debug-status').filter({ hasText: 'Debug logging disabled' }).waitFor();
+    assert.equal(debugEnabled, false);
     await page.getByRole('button', { name: 'Check Integration', exact: true }).click();
     await page.locator('#dg-message').filter({ hasText: 'Integration checked' }).waitFor();
     assert.equal(integrationChecks, 1);
@@ -324,6 +437,30 @@ const fs = require('node:fs'),
     );
     await page.clock.runFor(6000);
     assert.equal(await page.locator('[data-test-toast-id="deadlock-guard"]').isVisible(), true);
+    // An earlier success deadline must not dismiss a later error or another plugin's toast.
+    await page.evaluate(() => {
+      window.toast.info('Another plugin', { id: 'another-plugin', duration: Infinity });
+      DeadlockGuard.report('Handoff complete', { kind: 'success' });
+    });
+    await page.clock.runFor(3000);
+    await page.evaluate(() => DeadlockGuard.report('Handoff failed', { kind: 'error' }));
+    await page.clock.runFor(6000);
+    assert.match(
+      await page.locator('[data-test-toast-id="deadlock-guard"]').innerText(),
+      /Handoff failed/,
+    );
+    // Success also expires when replacing a persistent error, with its own full five seconds.
+    await page.evaluate(() => DeadlockGuard.report('Handoff complete', { kind: 'success' }));
+    await page.clock.runFor(3000);
+    await page.evaluate(() => DeadlockGuard.report('Groups saved', { kind: 'success' }));
+    await page.clock.runFor(3000);
+    assert.match(
+      await page.locator('[data-test-toast-id="deadlock-guard"]').innerText(),
+      /Groups saved/,
+    );
+    await page.clock.runFor(2100);
+    assert.equal(await page.locator('[data-test-toast-id="deadlock-guard"]').isVisible(), false);
+    assert.equal(await page.locator('[data-test-toast-id="another-plugin"]').isVisible(), true);
     // A browser-blocked console gets a persistent native toast action after completion.
     await page.evaluate(() => {
       window.open = () => null;

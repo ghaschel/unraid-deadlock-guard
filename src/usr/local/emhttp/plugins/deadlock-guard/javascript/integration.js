@@ -27,7 +27,32 @@
     'dg-' +
     (globalThis.crypto?.randomUUID?.() ||
       Date.now().toString(36) + Math.random().toString(36).slice(2));
+  function debug(win, event, context = {}) {
+    if (!win.DeadlockGuardDebug) return;
+    try {
+      const safe = {};
+      for (const name of [
+        'op',
+        'type',
+        'id',
+        'action',
+        'status',
+        'jobId',
+        'managed',
+        'handoff',
+        'errorType',
+      ]) {
+        const value = context[name];
+        if (['string', 'boolean', 'number'].includes(typeof value))
+          safe[name] = typeof value === 'string' ? value.slice(0, 512) : value;
+      }
+      win.console?.debug('[Deadlock Guard]', event, safe);
+    } catch (_) {
+      /* Console diagnostics must not affect an action. */
+    }
+  }
   async function request(body, { timeout = 0 } = {}) {
+    debug(window, 'request.started', { op: body.op });
     const csrf = window.DeadlockGuardToken || window.csrf_token || '';
     const controller = timeout ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), timeout) : null;
@@ -42,12 +67,19 @@
       });
       const data = await response.json().catch(() => {
         throw Error(
-          'Unraid session or integration unavailable. Reload and sign in; an accepted handoff continues in the background.',
+          'Unraid session or integration unavailable. Reload and sign in; an accepted action continues in the background.',
         );
+      });
+      if (typeof data.debugEnabled === 'boolean') window.DeadlockGuardDebug = data.debugEnabled;
+      debug(window, 'request.completed', {
+        op: body.op,
+        status: response.status,
+        jobId: data.job?.id,
       });
       if (!response.ok || data.error) throw Error(data.error || 'Request failed');
       return data;
     } catch (error) {
+      debug(window, 'request.failed', { op: body.op, errorType: error.name });
       if (controller?.signal.aborted) throw Error('Unraid did not respond in time. Please retry.');
       throw error;
     } finally {
@@ -56,39 +88,49 @@
   }
   function install(win, send, report, openConsole) {
     const pending = (win.__deadlockGuardPending ||= new Map());
-    async function waitForJob(job) {
-      while (!POLL_STOP_STATUSES.includes(job.status)) {
-        report(job.phase, { workloads: job.progress?.workloads || [] });
-        await delay(JOB_POLL_MS);
-        job = (await send({ op: 'status', id: job.id })).job;
-      }
-      if (job.status !== 'succeeded') throw Error(job.error || job.phase);
-      return job;
-    }
-
-    async function handoff(native, mode, popup, originalAction, refresh) {
-      let accepted = null;
+    async function runAction(native, mode, popup, originalAction, refresh) {
+      let job = null;
       try {
-        report('Checking exclusive groups…');
+        debug(win, 'action.requested', native);
         const result = await send({ op: 'route', native, key: key() });
+        debug(win, 'action.routed', { ...native, managed: result.managed, jobId: result.job?.id });
         if (!result.managed) {
           popup?.close();
-          report('');
           return originalAction();
         }
-        accepted = result.job.id;
-        const job = await waitForJob(result.job);
-        report(job.phase || 'Handoff complete', { kind: 'success' });
-        if (mode) await openConsole(result.requests[0].workload, mode, popup);
+        job = result.job;
+        while (!POLL_STOP_STATUSES.includes(job.status)) {
+          if (job.handoff) report(job.phase, { workloads: job.progress?.workloads || [] });
+          await delay(JOB_POLL_MS);
+          job = (await send({ op: 'status', id: job.id })).job;
+        }
+        debug(win, 'action.completed', { jobId: job.id, status: job.status, handoff: job.handoff });
+        if (job.status !== 'succeeded') throw Error(job.error || job.phase);
+        if (job.handoff) report(job.phase || 'Handoff complete', { kind: 'success' });
+        if (mode) await openConsole(result.requests[0].workload, mode, popup, !!job.handoff);
         refresh();
       } catch (error) {
+        debug(win, 'action.failed', { jobId: job?.id, errorType: error.name });
         popup?.close();
-        report('Handoff could not complete', {
-          kind: 'error',
-          detail:
-            error.message +
-            (accepted ? ' See recent handoffs in Settings → Deadlock Guard for details.' : ''),
-        });
+        if (job?.handoff) {
+          report('Handoff could not complete', {
+            kind: 'error',
+            detail:
+              error.message + ' See recent handoffs in Settings → Deadlock Guard for details.',
+          });
+        } else {
+          const target = native.type === 'vm' ? 'VM' : 'container';
+          showNativeDialog(win, {
+            title:
+              'Unable to ' +
+              native.action +
+              (native.bulk ? ' selected ' + target + 's' : ' ' + target),
+            text:
+              error.message +
+              (job ? ' See Troubleshooting in Settings → Deadlock Guard for details.' : ''),
+            type: 'error',
+          });
+        }
       }
     }
 
@@ -103,7 +145,7 @@
         const mode = consoleMode(name);
         // Open in the original click gesture so delayed handoffs can retain the console window.
         const popup = mode === 'browser' && win.open ? win.open('about:blank', '_blank') : null;
-        const work = handoff(
+        const work = runAction(
           native,
           mode,
           popup,
@@ -127,16 +169,18 @@
     ]) {
       wrap(name, vmRequest);
     }
-    const page = win.location.pathname;
-    const type = /^\/(Docker)(\/|$)/i.test(page)
-      ? 'docker'
-      : /^\/(VMs|VM)(\/|$)/i.test(page)
-        ? 'vm'
-        : null;
+    const type = listPageType(win.location.pathname);
     if (type) wrap('startAll', () => ({ type, bulk: true, action: 'start' }));
     if (type === 'docker') wrap('resumeAll', () => ({ type, bulk: true, action: 'resume' }));
     return { docker: !!win.eventControl?.deadlockGuard, vm: !!win.ajaxVMDispatch?.deadlockGuard };
   }
+  function listPageType(pathname) {
+    // Editors live below these routes but do not contain the list's Start controls.
+    if (/^\/Docker\/?$/i.test(pathname)) return 'docker';
+    if (/^\/VMs?\/?$/i.test(pathname)) return 'vm';
+    return null;
+  }
+
   function dockerRequest(parameters) {
     if (!parameters || !['start', 'restart', 'resume'].includes(parameters.action)) return null;
     return { type: 'docker', id: parameters.container, action: parameters.action };
@@ -158,10 +202,23 @@
     else if (typeof win.loadlist === 'function') win.loadlist();
   }
 
+  function showNativeDialog(win, options, action) {
+    if (typeof win.swal === 'function') {
+      win.swal({ ...options, html: false, confirmButtonText: action?.label || 'OK' }, () =>
+        action?.onClick(),
+      );
+    } else {
+      win.alert?.(options.title + '\n' + options.text);
+    }
+  }
+
   const notificationId = 'deadlock-guard';
+  let notificationTimer;
 
   function report(message, { kind = 'progress', detail = '', workloads = [], action } = {}) {
     const toast = window.toast;
+    clearTimeout(notificationTimer);
+    notificationTimer = undefined;
     if (!message) {
       toast?.dismiss(notificationId);
       return;
@@ -176,9 +233,16 @@
     const duration = kind === 'success' ? SUCCESS_TOAST_MS : Infinity;
 
     if (typeof toast?.[method] === 'function') {
-      // Unraid owns the position, theme, close button and notification lifetime.
-      // A stable ID updates this handoff's notification without touching other plugins.
+      // A stable ID updates this handoff's native notification without touching other plugins.
       toast[method](message, { id: notificationId, description, duration, action });
+      if (kind === 'success') {
+        // vue-sonner retains the loading toast's infinite lifetime when updating its ID.
+        // Dismiss explicitly; the next report cancels this timer before replacing the message.
+        notificationTimer = setTimeout(() => {
+          notificationTimer = undefined;
+          toast.dismiss(notificationId);
+        }, SUCCESS_TOAST_MS);
+      }
     } else if (kind !== 'progress' && typeof window.swal === 'function') {
       // The native toaster mounts asynchronously. If it failed to load, use
       // Unraid's existing dialog for the final result, never a custom popup.
@@ -196,7 +260,7 @@
     }
   }
 
-  async function openConsole(workload, mode, popup) {
+  async function openConsole(workload, mode, popup, handoff) {
     const data = await request({ op: 'console', workload });
     if (mode === 'rv') {
       const blob = new Blob(
@@ -232,23 +296,24 @@
     }
     if (popup && !popup.closed) popup.location.replace(url.href);
     else {
-      report('Handoff complete', {
-        kind: 'info',
-        detail: 'Your browser did not open the console automatically.',
-        action: {
-          label: 'Open VM console',
-          onClick: () => window.open(url.href, '_blank', 'noopener'),
-        },
-      });
+      const detail = 'Your browser did not open the console automatically.';
+      const action = {
+        label: 'Open VM console',
+        onClick: () => window.open(url.href, '_blank', 'noopener'),
+      };
+      if (handoff) report('Handoff complete', { kind: 'info', detail, action });
+      else showNativeDialog(window, { title: 'VM started', text: detail, type: 'info' }, action);
     }
   }
   function boot(win) {
     const setup = () => {
       const coverage = install(win, request, report, openConsole);
-      if (
-        (/^\/Docker(?:\/|$)/i.test(location.pathname) && !coverage.docker) ||
-        (/^\/VMs(?:\/|$)/i.test(location.pathname) && !coverage.vm)
-      )
+      const type = listPageType(win.location.pathname);
+      debug(win, 'integration.checked', {
+        type: type || 'other',
+        managed: type ? coverage[type] : coverage.docker || coverage.vm,
+      });
+      if (type && !coverage[type])
         report('Deadlock Guard integration is unavailable on this page.', {
           kind: 'error',
           detail: 'Reload before starting grouped workloads.',

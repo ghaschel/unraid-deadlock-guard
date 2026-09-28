@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { debugLog, errorClass, trace } from './debug.mjs';
 
 export const pluginRoot = '/usr/local/emhttp/plugins/deadlock-guard';
 export const runDir = '/var/run/deadlock-guard';
@@ -54,33 +55,69 @@ export function clearStatus() {
   if (status.processIdentity === identity().processIdentity) fs.unlinkSync(file);
 }
 
-export function createRpc(adapterHash) {
-  return (request) =>
-    new Promise((resolve, reject) => {
-      // No shell, user-controlled executable, command argument, API key or token.
-      const child = execFile(
-        '/usr/bin/php',
-        ['-d', 'auto_prepend_file=', path.join(pluginRoot, 'scripts/api-bridge.php')],
-        { timeout: 20000, maxBuffer: 2 * 1024 * 1024, encoding: 'utf8' },
-        (error, stdout) => {
-          try {
-            const response = JSON.parse(stdout);
-            if (response.error) throw Error(response.error);
-            if (error) throw error;
-            resolve(response);
-          } catch (failure) {
-            reject(
-              Error(
-                'Deadlock Guard: ' +
-                  (failure instanceof SyntaxError
-                    ? 'API bridge did not respond. An accepted job continues; see Recent handoffs.'
-                    : failure.message),
-              ),
-            );
-          }
-        },
-      );
-      child.stdin.on('error', () => {}); // An early bridge failure is handled above.
-      child.stdin.end(JSON.stringify({ ...request, adapterHash }));
-    });
+export function createRpc(adapterHash, { debug = debugLog } = {}) {
+  return async (request) => {
+    const started = performance.now();
+    const details = {
+      op: request?.op,
+      type: request?.native?.type,
+      action: request?.native?.action,
+      workloadId: request?.native?.id,
+      jobId: request?.op === 'status' ? request.id : undefined,
+    };
+    let reason = 'bridge_transport';
+    let failureClass;
+    trace(debug, 'rpc.begin', details);
+    try {
+      const response = await new Promise((resolve, reject) => {
+        // No shell, user-controlled executable, command argument, API key or token.
+        const child = execFile(
+          '/usr/bin/php',
+          ['-d', 'auto_prepend_file=', path.join(pluginRoot, 'scripts/api-bridge.php')],
+          { timeout: 20000, maxBuffer: 2 * 1024 * 1024, encoding: 'utf8' },
+          (error, stdout) => {
+            try {
+              reason = 'bridge_response';
+              const response = JSON.parse(stdout);
+              if (response.error) {
+                reason = 'bridge_error';
+                throw Error(response.error);
+              }
+              reason = 'bridge_transport';
+              if (error) throw error;
+              resolve(response);
+            } catch (failure) {
+              failureClass = errorClass(failure);
+              reject(
+                Error(
+                  'Deadlock Guard: ' +
+                    (failure instanceof SyntaxError
+                      ? 'API bridge did not respond. An accepted job continues; see Recent handoffs.'
+                      : failure.message),
+                ),
+              );
+            }
+          },
+        );
+        child.stdin.on('error', () => {}); // An early bridge failure is handled above.
+        child.stdin.end(JSON.stringify({ ...request, adapterHash }));
+      });
+      trace(debug, 'rpc.result', {
+        ...details,
+        managed: response?.managed,
+        jobId: response?.job?.id ?? details.jobId,
+        status: response?.job?.status,
+        durationMs: performance.now() - started,
+      });
+      return response;
+    } catch (error) {
+      trace(debug, 'rpc.failure', {
+        ...details,
+        reason,
+        errorClass: failureClass || errorClass(error),
+        durationMs: performance.now() - started,
+      });
+      throw error;
+    }
+  };
 }

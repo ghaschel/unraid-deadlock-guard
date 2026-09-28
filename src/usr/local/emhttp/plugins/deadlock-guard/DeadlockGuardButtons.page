@@ -10,9 +10,12 @@ $dgToken = json_encode(
     $dgVariables['csrf_token'] ?? '',
     JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT,
 );
+require_once "$dgAssets/lib/bootstrap.php";
+$dgDebugEnabled = \DeadlockGuard\DebugLog::system()->enabled();
 ?>
 <link rel="stylesheet" href="/plugins/deadlock-guard/styles/deadlock-guard.css?v=<?= $dgStylesHash ?>">
 <script>
   window.DeadlockGuardToken = <?= $dgToken ?>;
+  window.DeadlockGuardDebug = <?= $dgDebugEnabled ? 'true' : 'false' ?>;
 </script>
 <script src="/plugins/deadlock-guard/javascript/integration.js?v=<?= $dgIntegrationHash ?>" defer></script>

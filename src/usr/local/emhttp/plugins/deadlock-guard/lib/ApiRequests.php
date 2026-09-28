@@ -60,6 +60,10 @@ final class ApiRequests
         }
 
         $route = $router->route($native, 'api');
+        $this->store->debug->record('api.routed', [
+            'managed' => $route['managed'],
+            'source' => 'api',
+        ]);
         if (!$route['managed']) {
             return $route;
         }

@@ -6,3 +6,7 @@ __pycache__/
 /tests/api/node_modules/
 /.superpowers/
 /.release/
+/.local-build/
+/.env
+/.env.*
+!/.env.example

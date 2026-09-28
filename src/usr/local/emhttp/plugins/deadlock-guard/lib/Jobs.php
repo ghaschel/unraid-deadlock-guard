@@ -34,6 +34,10 @@ final class Jobs
                         'Idempotency key already used for a different request',
                     );
                 }
+                $this->store->debug->record('job.joined', [
+                    'jobId' => $job['id'],
+                    'source' => $job['source'],
+                ]);
                 return $job;
             }
         }
@@ -42,6 +46,10 @@ final class Jobs
                 if (count($job['keys']) >= self::MAX_IDEMPOTENCY_KEYS) {
                     throw new RuntimeException('Too many duplicate requests');
                 }
+                $this->store->debug->record('job.joined', [
+                    'jobId' => $job['id'],
+                    'source' => $job['source'],
+                ]);
                 $job['keys'][] = $key;
                 $this->store->putJob($job);
                 return $job;
@@ -99,6 +107,10 @@ final class Jobs
                     (array_intersect($plan['groups'], $job['plan']['groups']) ||
                         array_intersect($touches, $job['touches']))
                 ) {
+                    $this->store->debug->record('job.busy', [
+                        'jobId' => $job['id'],
+                        'source' => $source,
+                    ]);
                     throw new RuntimeException('Group is busy: ' . $job['id']);
                 }
             }
@@ -115,6 +127,7 @@ final class Jobs
                 'plan' => $plan,
                 'touches' => $touches,
                 'status' => 'queued',
+                'handoff' => false,
                 'phase' => 'Queued',
                 'createdAt' => $now,
                 'updatedAt' => $now,
@@ -124,9 +137,29 @@ final class Jobs
                 'inFlight' => null,
             ];
             $this->store->putJob($job);
+            $this->store->debug->record('job.queued', [
+                'jobId' => $job['id'],
+                'source' => $source,
+                'count' => count($touches),
+            ]);
             $this->store->prune();
             return $job;
         });
+    }
+
+    /** Keep ordinary safety reservations out of the handoff history. */
+    public function activity(): array
+    {
+        $activity = ['jobs' => [], 'actionErrors' => []];
+        foreach ($this->store->jobs() as $job) {
+            $public = self::publicJob($job);
+            if ($public['handoff']) {
+                $activity['jobs'][] = $public;
+            } elseif (in_array($job['status'], ['failed', 'quarantined'], true)) {
+                $activity['actionErrors'][] = $public;
+            }
+        }
+        return $activity;
     }
 
     public static function publicJob(array $job): array
@@ -146,6 +179,6 @@ final class Jobs
                 'states',
                 'inFlight',
             ]),
-        );
+        ) + ['handoff' => $job['handoff'] ?? true];
     }
 }

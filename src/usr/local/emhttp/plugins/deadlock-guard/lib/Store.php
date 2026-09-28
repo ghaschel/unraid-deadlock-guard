@@ -7,9 +7,11 @@ use RuntimeException;
 final class Store
 {
     private const MAX_COMPLETED_JOBS = 200;
+    public readonly DebugLog $debug;
 
     public function __construct(public readonly string $runDir, public readonly string $configFile)
     {
+        $this->debug = new DebugLog($runDir, dirname($configFile) . '/debug.json');
         foreach (
             [$runDir, $runDir . '/jobs', $runDir . '/permissions', $runDir . '/events']
             as $dir
@@ -123,6 +125,7 @@ final class Store
                 throw new RuntimeException('Configuration changed; reload before saving');
             }
             self::atomic($this->configFile, $config);
+            $this->debug->record('config.saved', ['count' => count($config['groups'])]);
             return $config;
         });
     }

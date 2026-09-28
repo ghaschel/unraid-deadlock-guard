@@ -27,6 +27,10 @@ final class Gate
             'expiresAt' => microtime(true) + self::AUTHORIZATION_SECONDS,
             'processIdentity' => $job['processIdentity'],
         ]);
+        $this->store->debug->record('gate.permit_issued', [
+            'jobId' => $jobId,
+            'workloadId' => $member['id'],
+        ]);
     }
 
     public function revoke(array $member): void
@@ -34,6 +38,7 @@ final class Gate
         $path = $this->store->permissionPath($member);
         if (is_file($path)) {
             unlink($path);
+            $this->store->debug->record('gate.permit_revoked', ['workloadId' => $member['id']]);
         }
     }
 
@@ -66,6 +71,17 @@ final class Gate
                 throw new RuntimeException('Invalid or expired VM authorization');
             }
             $this->event($member, 'prepare');
+            $this->store->debug->record('gate.authorized', [
+                'workloadId' => $member['id'],
+                'jobId' => $job['id'],
+            ]);
+        } catch (\Throwable $error) {
+            $this->store->debug->record('gate.rejected', [
+                'workloadId' => $member['id'],
+                'errorType' => get_class($error),
+                'reason' => 'permit_missing_or_invalid',
+            ]);
+            throw $error;
         } finally {
             flock($lock, LOCK_UN);
             fclose($lock);
@@ -83,6 +99,10 @@ final class Gate
             'phase' => $phase,
             'at' => microtime(true),
             'release' => $phase === 'release' ? microtime(true) : $previous['release'] ?? 0,
+        ]);
+        $this->store->debug->record('gate.event', [
+            'workloadId' => $member['id'],
+            'phase' => $phase,
         ]);
         if ($phase === 'release') {
             $this->revoke($member);

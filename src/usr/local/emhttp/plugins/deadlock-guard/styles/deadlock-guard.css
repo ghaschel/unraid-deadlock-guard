@@ -1,3 +1,15 @@
+/* Native Unraid icon classes retain their size and theme color. */
+i.icon-deadlock-guard::before {
+  content: '';
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+  background-color: currentColor;
+  -webkit-mask: url('../icon.svg') center / contain no-repeat;
+  mask: url('../icon.svg') center / contain no-repeat;
+}
+
 .dg-settings {
   max-width: 1100px;
   padding: 12px 24px 36px;
@@ -79,15 +91,16 @@
   overflow-wrap: anywhere;
 }
 
-.dg-settings #dg-message {
-  min-height: 24px;
+.dg-settings #dg-message[hidden] {
+  display: none;
 }
 
 .dg-settings #dg-message[data-kind='success'] {
   color: #25816d;
 }
 
-.dg-settings #dg-message[data-kind='error'] {
+.dg-settings #dg-message[data-kind='error'],
+.dg-settings #dg-debug-status[data-kind='error'] {
   color: #bf4e35;
 }
 
@@ -150,4 +163,9 @@
 
 .dg-settings .dg-health[data-kind='error'] {
   color: #bf4e35;
+}
+
+.dg-settings #dg-api-details {
+  max-height: 20rem;
+  overflow-y: auto;
 }

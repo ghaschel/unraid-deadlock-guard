@@ -20,6 +20,11 @@ try {
     $xml = stream_get_contents(STDIN, Gate::MAX_XML_BYTES + 1);
     $member = Gate::vmFromXml($xml);
     $store = Store::system();
+    $store->debug->record('hook.received', [
+        'op' => $operation,
+        'stage' => $stage,
+        'workloadId' => $member['id'],
+    ]);
     $gate = new Gate($store);
     if ($operation === 'prepare' && $stage === 'begin') {
         $gate->prepare($member);
@@ -33,7 +38,12 @@ try {
     } elseif (in_array($operation, ['started', 'stopped', 'release'], true)) {
         $gate->event($member, $operation);
     }
+    $store->debug->record('hook.completed', ['op' => $operation, 'workloadId' => $member['id']]);
 } catch (Throwable $error) {
+    DeadlockGuard\DebugLog::system()->record('hook.rejected', [
+        'op' => $operation,
+        'errorType' => get_class($error),
+    ]);
     fwrite(STDERR, 'Deadlock Guard: ' . $error->getMessage() . "\n");
     exit(1);
 }

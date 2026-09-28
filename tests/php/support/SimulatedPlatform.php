@@ -35,16 +35,31 @@ class SimulatedPlatform implements Platform
         return $this->states[$key];
     }
 
-    public function stop(array $member): void
+    public function stop(array $member, int $timeout): void
     {
         $key = Config::key($member);
         $this->log[] = 'stop:' . $key;
         if (empty($this->refuse[$key])) {
             $this->pending[$key] = $this->time + ($this->delays[$key] ?? 0);
         }
+        if ($member['type'] === 'vm') {
+            return;
+        }
+        // Native Docker Stop blocks while the daemon waits and escalates.
+        $deadline = $this->time + $timeout;
+        while ($this->time < $deadline) {
+            $this->pause();
+            if ($this->states[$key]['status'] === 'stopped') {
+                return;
+            }
+        }
+        if ($this->forceWorks) {
+            $this->states[$key]['status'] = 'stopped';
+            unset($this->pending[$key]);
+        }
     }
 
-    public function forceStop(array $member): void
+    public function forceStopVm(array $member): void
     {
         $key = Config::key($member);
         $this->log[] = 'force:' . $key;

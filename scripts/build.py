@@ -15,6 +15,7 @@ import re
 import tarfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Optional
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,12 +25,15 @@ PLUGIN_DIR = "usr/local/emhttp/plugins/deadlock-guard"
 MANIFEST_NAME = "deadlock-guard.plg"
 
 
-def read_version() -> str:
-    version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+def validate_version(version: str) -> str:
     if not re.fullmatch(r"[0-9]{4}\.[0-9]{2}\.[0-9]{2}(?:[a-z]+[0-9]*)?", version):
         raise ValueError(f"Invalid release version: {version!r}")
     dt.datetime.strptime(version[:10], "%Y.%m.%d")
     return version
+
+
+def read_version() -> str:
+    return validate_version((ROOT / "VERSION").read_text(encoding="utf-8").strip())
 
 
 def collect_package_files(version: str) -> dict[str, tuple[bytes, int]]:
@@ -142,8 +146,8 @@ def write_checksums(output: Path, artifacts: list[Path]) -> None:
     (output / "SHA256SUMS").write_text("".join(lines), encoding="utf-8")
 
 
-def build(output: Path) -> None:
-    version = read_version()
+def build(output: Path, version: Optional[str] = None) -> None:
+    version = read_version() if version is None else validate_version(version)
     output.mkdir(parents=True, exist_ok=True)
 
     package = output / f"deadlock-guard-{version}-noarch-1.txz"

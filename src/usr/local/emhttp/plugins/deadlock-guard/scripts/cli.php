@@ -16,7 +16,37 @@ try {
     $platform = new NativePlatform($store);
     $lifecycle = new Lifecycle($store);
     $command = $argv[1] ?? '';
+    $store->debug->record('lifecycle.started', [
+        'op' => in_array(
+            $command,
+            [
+                'supervise',
+                'worker',
+                'install',
+                'api-install',
+                'activate',
+                'services',
+                'check',
+                'pending',
+                'drain',
+                'upgrade',
+                'remove',
+                'debug-on',
+                'debug-off',
+            ],
+            true,
+        )
+            ? $command
+            : 'invalid',
+    ]);
     switch ($command) {
+        case 'debug-on':
+        case 'debug-off':
+            $store->debug->setEnabled($command === 'debug-on');
+            echo 'Debug logging ' .
+                ($command === 'debug-on' ? 'enabled' : 'disabled') .
+                ". Logs: /var/run/deadlock-guard/debug*.log\n";
+            break;
         case 'supervise':
             (new WorkerSupervisor($store, $platform))->run($argv[2] ?? '');
             break;
@@ -26,11 +56,17 @@ try {
             (new Coordinator($store, $platform, fn() => $lifecycle->assertReady($plan)))->run($id);
             break;
         case 'install':
+            $restartApi = ($argv[2] ?? '') === '--restart-api';
+            if (isset($argv[2]) && !$restartApi) {
+                throw new RuntimeException('Unknown installation option');
+            }
             $lifecycle->install();
-            (new ApiInstaller($store))->attemptInstall();
+            (new ApiInstaller($store))->attemptInstall(restart: $restartApi);
             break;
         case 'api-install':
-            (new ApiInstaller($store))->install();
+            if (!(new ApiInstaller($store))->attemptInstall(restart: true)) {
+                throw new RuntimeException('API setup or restart failed. See Troubleshooting.');
+            }
             break;
         case 'activate':
             $lifecycle->activate();
@@ -62,7 +98,11 @@ try {
         default:
             throw new RuntimeException('Unknown lifecycle command');
     }
+    $store->debug->record('lifecycle.completed', ['op' => $command]);
 } catch (Throwable $error) {
+    DeadlockGuard\DebugLog::system()->record('lifecycle.failed', [
+        'errorType' => get_class($error),
+    ]);
     fwrite(STDERR, 'Deadlock Guard: ' . $error->getMessage() . "\n");
     exit(1);
 }

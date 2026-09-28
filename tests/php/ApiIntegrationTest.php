@@ -90,9 +90,19 @@ test(
         Store::atomic($store->runDir . '/api-install-error.json', [
             'error' => 'Registration failed',
         ]);
-        eq(
-            $integration->health()['message'],
-            'API setup failed: Registration failed. See Troubleshooting.',
-        );
+        eq($integration->health()['message'], 'API setup failed. See Troubleshooting.');
     },
 );
+
+test('API setup keeps command output in diagnostics instead of the status line', function () {
+    $store = new Store(tempdir() . '/run', tempdir() . '/config');
+    $details =
+        'npm: ' .
+        str_repeat("npm warn peer dependency\n", 60) .
+        'npm error code ENOTCACHED <img src=x>';
+    Store::atomic($store->runDir . '/api-install-error.json', ['error' => $details]);
+    $health = (new ApiIntegration($store))->health();
+    eq($health['ready'], false);
+    eq($health['message'], 'API setup failed. See Troubleshooting.');
+    eq($health['details'], $details);
+});
