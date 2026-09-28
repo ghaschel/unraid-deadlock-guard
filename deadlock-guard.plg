@@ -3,17 +3,24 @@
 <PLUGIN
   name="deadlock-guard"
   author="Guilherme Haschel"
-  version="2026.09.23a3"
+  version="2026.09.28"
   launch="DeadlockGuard"
   pluginURL="https://raw.githubusercontent.com/ghaschel/unraid-deadlock-manager/main/deadlock-guard.plg"
   support="https://github.com/ghaschel/unraid-deadlock-manager/issues"
-  icon="fa-shield"
+  icon="icon-deadlock-guard"
   min="7.3.0"
   max="7.3.999"
 >
   <CHANGES><![CDATA[
-### 2026.09.23a3 — initial beta
-Native exclusive-group handoffs, VM safety gate, conservative recovery and Settings UI. Host validation required.
+### 2026.09.28
+## What's Changed
+* Add Deadlock Guard beta for Unraid VM and Docker handoffs by @ghaschel in https://github.com/ghaschel/unraid-deadlock-guard/pull/1
+* Add beta releases and improve native handoffs by @ghaschel in https://github.com/ghaschel/unraid-deadlock-guard/pull/2
+
+## New Contributors
+* @ghaschel made their first contribution in https://github.com/ghaschel/unraid-deadlock-guard/pull/1
+
+**Full Changelog**: https://github.com/ghaschel/unraid-deadlock-guard/commits/2026.09.28
   ]]></CHANGES>
 
   <!-- Check the host before downloading or installing anything. -->
@@ -35,10 +42,10 @@ mkdir -p /boot/config/plugins/deadlock-guard/packages
   </FILE>
 
   <!-- Versioned package and checksums are filled by the build script. -->
-  <FILE Name="/boot/config/plugins/deadlock-guard/packages/deadlock-guard-2026.09.23a3-noarch-1.txz">
-    <URL>https://github.com/ghaschel/unraid-deadlock-manager/releases/download/2026.09.23a3/deadlock-guard-2026.09.23a3-noarch-1.txz</URL>
-    <SHA256>32c9ca8e832a6a2dc46da1e4d113d8a8d9980047614a6ee0af38b7f7c64068b4</SHA256>
-    <MD5>22d8da7c80310af739afea372fdc9060</MD5>
+  <FILE Name="/boot/config/plugins/deadlock-guard/packages/deadlock-guard-2026.09.28-noarch-1.txz">
+    <URL>https://github.com/ghaschel/unraid-deadlock-manager/releases/download/2026.09.28/deadlock-guard-2026.09.28-noarch-1.txz</URL>
+    <SHA256>13d17ec4e7857be59cc9eaa7f06f028f0ec9cd34d6cfe663c92c3f536c906ddf</SHA256>
+    <MD5>9c827c8847d31b33b3e81b48b0fffff5</MD5>
   </FILE>
 
   <!-- Install the exact verified package, retaining the existing configuration. -->
@@ -46,11 +53,11 @@ mkdir -p /boot/config/plugins/deadlock-guard/packages
     <INLINE><![CDATA[
 set -euo pipefail
 
-package='/boot/config/plugins/deadlock-guard/packages/deadlock-guard-2026.09.23a3-noarch-1.txz'
+package='/boot/config/plugins/deadlock-guard/packages/deadlock-guard-2026.09.28-noarch-1.txz'
 plugin_dir='/usr/local/emhttp/plugins/deadlock-guard'
-expected_version='2026.09.23a3'
+expected_version='2026.09.28'
 
-printf '%s  %s\n' '32c9ca8e832a6a2dc46da1e4d113d8a8d9980047614a6ee0af38b7f7c64068b4' "$package" | sha256sum -c -
+printf '%s  %s\n' '13d17ec4e7857be59cc9eaa7f06f028f0ec9cd34d6cfe663c92c3f536c906ddf' "$package" | sha256sum -c -
 
 if [[ -x "$plugin_dir/scripts/lifecycle" ]]; then
   "$plugin_dir/scripts/lifecycle" check
@@ -67,7 +74,9 @@ if [[ "$installed_version" != "$expected_version" ]]; then
   exit 1
 fi
 
-"$plugin_dir/scripts/lifecycle" install
+# Package extraction prepares the module without restarting. Reload the API once
+# after the verified payload and registration are in place.
+"$plugin_dir/scripts/lifecycle" install --restart-api
 echo 'Deadlock Guard installed.'
 echo 'REBOOT REQUIRED after first installation: reboot Unraid when safe to activate VM protection.'
     ]]></INLINE>
