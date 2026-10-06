@@ -15,7 +15,7 @@ body:
         4. Attach the downloaded file in **Debug logs** below. Logs include VM/container names and IDs; review them before sharing.
         5. Disable debug logging when finished.
 
-        If Settings cannot open or logs cannot be downloaded, follow the [troubleshooting guide](https://github.com/ghaschel/unraid-deadlock-manager/blob/main/docs/TROUBLESHOOTING.md#collect-debug-logs). Explain any problem collecting logs below.
+        If Settings cannot open or logs cannot be downloaded, follow the [troubleshooting guide](https://github.com/ghaschel/unraid-deadlock-guard/blob/main/docs/TROUBLESHOOTING.md#collect-debug-logs). Explain any problem collecting logs below.
   - type: input
     id: plugin-version
     attributes:

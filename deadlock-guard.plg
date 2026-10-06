@@ -5,8 +5,8 @@
   author="Guilherme Haschel"
   version="2026.09.28"
   launch="DeadlockGuard"
-  pluginURL="https://raw.githubusercontent.com/ghaschel/unraid-deadlock-manager/main/deadlock-guard.plg"
-  support="https://github.com/ghaschel/unraid-deadlock-manager/issues"
+  pluginURL="https://raw.githubusercontent.com/ghaschel/unraid-deadlock-guard/main/deadlock-guard.plg"
+  support="https://github.com/ghaschel/unraid-deadlock-guard/issues"
   icon="icon-deadlock-guard"
   min="7.3.0"
   max="7.3.999"
@@ -43,7 +43,7 @@ mkdir -p /boot/config/plugins/deadlock-guard/packages
 
   <!-- Versioned package and checksums are filled by the build script. -->
   <FILE Name="/boot/config/plugins/deadlock-guard/packages/deadlock-guard-2026.09.28-noarch-1.txz">
-    <URL>https://github.com/ghaschel/unraid-deadlock-manager/releases/download/2026.09.28/deadlock-guard-2026.09.28-noarch-1.txz</URL>
+    <URL>https://github.com/ghaschel/unraid-deadlock-guard/releases/download/2026.09.28/deadlock-guard-2026.09.28-noarch-1.txz</URL>
     <SHA256>13d17ec4e7857be59cc9eaa7f06f028f0ec9cd34d6cfe663c92c3f536c906ddf</SHA256>
     <MD5>9c827c8847d31b33b3e81b48b0fffff5</MD5>
   </FILE>

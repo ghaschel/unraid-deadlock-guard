@@ -64,6 +64,6 @@ An update rejected because a job is active leaves the job unchanged. If an updat
 
 ## Report a problem
 
-Use the [bug report form](https://github.com/ghaschel/unraid-deadlock-manager/issues/new?template=bug_report.yml). Include the plugin and Unraid versions, the steps to reproduce, the expected result and what happened. Attach `deadlock-guard-debug.txt` collected with debug logging enabled during reproduction, along with relevant handoff details. Include browser console entries for UI problems. Review VM/container names and IDs before sharing. If you cannot reproduce the problem or collect logs, explain why in the form.
+Use the [bug report form](https://github.com/ghaschel/unraid-deadlock-guard/issues/new?template=bug_report.yml). Include the plugin and Unraid versions, the steps to reproduce, the expected result and what happened. Attach `deadlock-guard-debug.txt` collected with debug logging enabled during reproduction, along with relevant handoff details. Include browser console entries for UI problems. Review VM/container names and IDs before sharing. If you cannot reproduce the problem or collect logs, explain why in the form.
 
-For improvements, use the [feature request form](https://github.com/ghaschel/unraid-deadlock-manager/issues/new?template=feature_request.yml) and explain the problem you want to solve.
+For improvements, use the [feature request form](https://github.com/ghaschel/unraid-deadlock-guard/issues/new?template=feature_request.yml) and explain the problem you want to solve.

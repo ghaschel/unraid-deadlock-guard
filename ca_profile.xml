@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CommunityApplications>
-  <Profile>Deadlock Guard by Guilherme Haschel coordinates exclusive VM and Docker resource groups through the native Unraid WebGUI. Initial beta targets Unraid 7.3.x. Support and bug reports: https://github.com/ghaschel/unraid-deadlock-manager/issues</Profile>
-  <Icon>https://raw.githubusercontent.com/ghaschel/unraid-deadlock-manager/main/icon.svg</Icon>
-  <WebPage>https://github.com/ghaschel/unraid-deadlock-manager</WebPage>
+  <Profile>Deadlock Guard by Guilherme Haschel coordinates exclusive VM and Docker resource groups through the native Unraid WebGUI. Initial beta targets Unraid 7.3.x. Support and bug reports: https://github.com/ghaschel/unraid-deadlock-guard/issues</Profile>
+  <Icon>https://raw.githubusercontent.com/ghaschel/unraid-deadlock-guard/main/icon.svg</Icon>
+  <WebPage>https://github.com/ghaschel/unraid-deadlock-guard</WebPage>
 </CommunityApplications>

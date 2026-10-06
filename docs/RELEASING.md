@@ -18,11 +18,13 @@ Versions use the UTC date: `2026.09.24`, then `2026.09.24a` through `2026.09.24z
 
 GitHub generates notes from merged PRs since the previous published release, including betas. The same notes appear in `CHANGELOG.md`, GitHub's release description, and Unraid's changelog. Inspect the first release's generated notes in a dry run: GitHub chooses the initial comparison boundary when there is no previous published release. Subsequent runs supply that release's tag explicitly.
 
-The existing update URL stays unchanged:
+The canonical update URL is:
 
-[Published Unraid manifest](https://raw.githubusercontent.com/ghaschel/unraid-deadlock-manager/main/deadlock-guard.plg)
+[Published Unraid manifest](https://raw.githubusercontent.com/ghaschel/unraid-deadlock-guard/main/deadlock-guard.plg)
 
 The Community Apps wrapper points to that same URL. Subsequent plugin updates become available through this manifest; each release retains its own immutable package URL.
+
+The wrapper's `TemplateURL` points to `plugins/deadlock-guard.xml` in the same repository. Older installations may still use the former `unraid-deadlock-manager` repository URL, which GitHub currently resolves to the renamed repository. Keep that old repository name unused so those installations can continue checking for updates.
 
 ## If a release fails
 

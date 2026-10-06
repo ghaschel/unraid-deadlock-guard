@@ -47,7 +47,7 @@ $dgVersion = trim((string) @file_get_contents("$docroot/plugins/deadlock-guard/V
     <button type="button" id="dg-check-pending">Check pending jobs</button>
   </div>
   </details>
-  <p><a href="https://github.com/ghaschel/unraid-deadlock-manager/issues" target="_blank" rel="noopener">Support on GitHub Issues</a></p>
+  <p><a href="https://github.com/ghaschel/unraid-deadlock-guard/issues" target="_blank" rel="noopener">Support on GitHub Issues</a></p>
 </div>
 <script>
 (function () {

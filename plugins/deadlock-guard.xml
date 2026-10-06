@@ -2,15 +2,16 @@
 <Plugin>
   <Name>Deadlock Guard</Name>
   <Overview>Beta VM and Docker handoff manager for Unraid 7.3.x. Configure exclusive groups, then use the normal VMs, Docker and Dashboard controls. Conflicts must stop before the requested workload starts. Grouped VM command-line and autostart starts are blocked. Direct Docker starts and automatic restart/update paths bypass enforcement. GPU/PCI driver rebinding is the administrator's responsibility. Real-host validation is required before production use.</Overview>
-  <PluginURL>https://raw.githubusercontent.com/ghaschel/unraid-deadlock-manager/main/deadlock-guard.plg</PluginURL>
+  <PluginURL>https://raw.githubusercontent.com/ghaschel/unraid-deadlock-guard/main/deadlock-guard.plg</PluginURL>
+  <TemplateURL>https://raw.githubusercontent.com/ghaschel/unraid-deadlock-guard/main/plugins/deadlock-guard.xml</TemplateURL>
   <PluginAuthor>Guilherme Haschel</PluginAuthor>
-  <Support>https://github.com/ghaschel/unraid-deadlock-manager/issues</Support>
-  <Project>https://github.com/ghaschel/unraid-deadlock-manager</Project>
-  <ReadMe>https://raw.githubusercontent.com/ghaschel/unraid-deadlock-manager/main/README.md</ReadMe>
+  <Support>https://github.com/ghaschel/unraid-deadlock-guard/issues</Support>
+  <Project>https://github.com/ghaschel/unraid-deadlock-guard</Project>
+  <ReadMe>https://raw.githubusercontent.com/ghaschel/unraid-deadlock-guard/main/README.md</ReadMe>
   <Category>Tools:System</Category>
   <Beta>true</Beta>
   <MinVer>7.3.0</MinVer>
   <MaxVer>7.3.999</MaxVer>
-  <Icon>https://raw.githubusercontent.com/ghaschel/unraid-deadlock-manager/main/icon.svg</Icon>
+  <Icon>https://raw.githubusercontent.com/ghaschel/unraid-deadlock-guard/main/icon.svg</Icon>
   <License>MIT</License>
 </Plugin>

@@ -34,9 +34,9 @@ See [coverage and API details](docs/USER-GUIDE.md#coverage) before relying on pr
 
 ## Get help
 
-To [report a bug](https://github.com/ghaschel/unraid-deadlock-manager/issues/new?template=bug_report.yml), open **Settings → Deadlock Guard → Troubleshooting**, check **Enable debug logging**, and reproduce the problem. Click **Download debug logs** before rebooting and attach the downloaded file to the report. Disable debug logging when finished. See the [troubleshooting guide](docs/TROUBLESHOOTING.md) if you cannot collect logs.
+To [report a bug](https://github.com/ghaschel/unraid-deadlock-guard/issues/new?template=bug_report.yml), open **Settings → Deadlock Guard → Troubleshooting**, check **Enable debug logging**, and reproduce the problem. Click **Download debug logs** before rebooting and attach the downloaded file to the report. Disable debug logging when finished. See the [troubleshooting guide](docs/TROUBLESHOOTING.md) if you cannot collect logs.
 
-Have an idea? [Request a feature](https://github.com/ghaschel/unraid-deadlock-manager/issues/new?template=feature_request.yml) and describe the problem it would solve.
+Have an idea? [Request a feature](https://github.com/ghaschel/unraid-deadlock-guard/issues/new?template=feature_request.yml) and describe the problem it would solve.
 
 [Development](docs/DEVELOPMENT.md) · [Architecture](docs/ARCHITECTURE.md) · [Host validation](docs/HOST-VALIDATION.md) · [Releasing](docs/RELEASING.md)
 
